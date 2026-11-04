@@ -1,0 +1,89 @@
+{
+  "corpus": [
+    {
+      "id": "doc_dist_sys_01",
+      "source": "distributed_consensus.md",
+      "text": "The Raft consensus algorithm is designed to be understandable and modular. Raft relies on leader election, log replication, and safety invariants. In Raft, a leader is elected when a follower experiences an election timeout and transitions to candidate state, requesting votes from peers with Term ID."
+    },
+    {
+      "id": "doc_dist_sys_02",
+      "source": "cap_theorem.md",
+      "text": "Eric Brewer's CAP Theorem posits that any distributed data store can simultaneously provide at most two of three guarantees: Consistency, Availability, and Partition Tolerance. In the presence of a network partition, the system must choose between consistency and availability."
+    },
+    {
+      "id": "doc_vectordb_01",
+      "source": "vector_indexing.txt",
+      "text": "Hierarchical Navigable Small World (HNSW) graphs are multi-layer proximity graphs used for approximate nearest neighbor (ANN) search. HNSW achieves logarithmic search scaling O(log N) with high recall and is widely deployed in production vector databases like Milvus, Qdrant, and Faiss."
+    },
+    {
+      "id": "doc_vectordb_02",
+      "source": "dense_sparse_fusion.txt",
+      "text": "Reciprocal Rank Fusion (RRF) is a method that combines multiple retrieval result sets with different scoring distributions. RRF computes score as sum of 1 / (k + rank) where constant k is typically set to 60. RRF avoids score normalization artifacts between BM25 and cosine embeddings."
+    },
+    {
+      "id": "doc_security_01",
+      "source": "api_security_standards.md",
+      "text": "Cross-Origin Resource Sharing (CORS) security policies restrict web applications running at one origin from requesting resources from a different origin. For production API endpoints, wildcards ('*') in Access-Control-Allow-Origin must be avoided when credentials like cookies or Authorization headers are transmitted."
+    },
+    {
+      "id": "doc_security_02",
+      "source": "prompt_injection_defense.md",
+      "text": "Indirect prompt injection attacks occur when malicious instructions are embedded within untrusted documents retrieved by a RAG system. Defenses include input framing with strict boundary tags, instruction-following refusal guards, and treating all retrieved content strictly as reference data."
+    },
+    {
+      "id": "doc_rag_eval_01",
+      "source": "retrieval_metrics.txt",
+      "text": "Mean Reciprocal Rank (MRR) evaluates the quality of ranked retrieval by taking the reciprocal of the rank at which the first relevant document is found: MRR = (1/|Q|) * sum(1 / rank_i). NDCG evaluates graded relevance across all top-K positions with logarithmic discounting."
+    }
+  ],
+  "benchmark_queries": [
+    {
+      "query_id": "q1",
+      "query": "How does Raft leader election work when an election timeout occurs?",
+      "relevant_doc_ids": ["distributed_consensus.md"],
+      "ground_truth_answer": "In Raft, a leader is elected when a follower experiences an election timeout and transitions to candidate state, requesting votes from peers with Term ID."
+    },
+    {
+      "query_id": "q2",
+      "query": "What are the trade-offs in CAP Theorem during a network partition?",
+      "relevant_doc_ids": ["cap_theorem.md"],
+      "ground_truth_answer": "In the presence of a network partition, the system must choose between consistency and availability."
+    },
+    {
+      "query_id": "q3",
+      "query": "What algorithmic complexity and graph structure does HNSW use for ANN search?",
+      "relevant_doc_ids": ["vector_indexing.txt"],
+      "ground_truth_answer": "HNSW uses multi-layer proximity graphs and achieves logarithmic search scaling O(log N) for approximate nearest neighbor search."
+    },
+    {
+      "query_id": "q4",
+      "query": "How does Reciprocal Rank Fusion combine BM25 and vector scores without normalization?",
+      "relevant_doc_ids": ["dense_sparse_fusion.txt"],
+      "ground_truth_answer": "Reciprocal Rank Fusion computes score as sum of 1 / (k + rank) where constant k is typically set to 60, avoiding score normalization artifacts."
+    },
+    {
+      "query_id": "q5",
+      "query": "Why should CORS Access-Control-Allow-Origin avoid wildcard with credentials?",
+      "relevant_doc_ids": ["api_security_standards.md"],
+      "ground_truth_answer": "Wildcards in Access-Control-Allow-Origin must be avoided when credentials like cookies or Authorization headers are transmitted."
+    },
+    {
+      "query_id": "q6",
+      "query": "How can indirect prompt injection attacks in RAG pipelines be defended?",
+      "relevant_doc_ids": ["prompt_injection_defense.md"],
+      "ground_truth_answer": "Defenses include input framing with strict boundary tags, instruction-following refusal guards, and treating all retrieved content strictly as reference data."
+    },
+    {
+      "query_id": "q7",
+      "query": "What formula defines Mean Reciprocal Rank (MRR) in retrieval evaluation?",
+      "relevant_doc_ids": ["retrieval_metrics.txt"],
+      "ground_truth_answer": "MRR is defined as (1/|Q|) * sum(1 / rank_i), taking the reciprocal of the rank at which the first relevant document is found."
+    },
+    {
+      "query_id": "q8_unanswerable",
+      "query": "What is the orbital velocity of the Hubble Space Telescope?",
+      "relevant_doc_ids": [],
+      "ground_truth_answer": "I do not have sufficient information in the provided context to answer this question."
+    }
+  ]
+}
