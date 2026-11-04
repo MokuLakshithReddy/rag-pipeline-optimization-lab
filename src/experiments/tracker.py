@@ -38,6 +38,8 @@ class ExperimentTracker:
             "reranker_model",
             "reranker_status",
             "query_enhancement",
+            "generator_provider",
+            "generator_model",
             "precision_at_k",
             "recall_at_k",
             "mrr",
@@ -50,8 +52,10 @@ class ExperimentTracker:
             "generation_latency_ms",
             "total_latency_mean_ms",
             "latency_p95_ms",
+            "delta_rss_mb",
             "memory_rss_mb",
             "peak_heap_mb",
+            "torch_cuda_peak_mb",
         ]
 
         file_exists = self.csv_path.exists()
@@ -76,19 +80,21 @@ class ExperimentTracker:
             f"\n*Generated on: {datetime.datetime.now(datetime.timezone.utc).isoformat()}*",
             f"*Total Experiments Executed: {len(df)}*\n",
             "## 1. Controlled Experiment Results Table\n",
-            "| Experiment ID | Strategy | Chunker (Size/Overlap) | Reranker (Status) | Hit@K | Precision@K | Recall@K | MRR | NDCG@K | Total Latency (p95) | Peak Heap |",
-            "| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+            "| Experiment ID | Strategy | Chunker (Size/Overlap) | Reranker (Status) | Generator | Hit@K | Precision@K | Recall@K | MRR | NDCG@K | Total Latency (p95) | Delta RSS | Peak Heap |",
+            "| :--- | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
         ]
 
         for _, row in df.iterrows():
             rerank_desc = f"{row['reranker_enabled']} ({row.get('reranker_status', 'none')})"
+            gen_desc = f"{row.get('generator_provider', 'mock')}"
+            delta_rss = row.get('delta_rss_mb', 0.0)
             lines.append(
                 f"| `{row['experiment_id']}` | **{row['retrieval_strategy']}** | "
                 f"{row['chunking_strategy']} ({row['chunk_size']}/{row['chunk_overlap']}) | "
-                f"{rerank_desc} | "
+                f"{rerank_desc} | {gen_desc} | "
                 f"**{row['hit_at_k']:.3f}** | {row['precision_at_k']:.3f} | {row['recall_at_k']:.3f} | "
                 f"**{row['mrr']:.3f}** | **{row['ndcg_at_k']:.3f}** | "
-                f"{row['latency_p95_ms']:.1f}ms | {row['peak_heap_mb']:.1f}MB |"
+                f"{row['latency_p95_ms']:.1f}ms | +{delta_rss:.1f}MB | {row['peak_heap_mb']:.1f}MB |"
             )
 
         baseline = df[df["experiment_id"].str.contains("baseline", case=False, na=False)]
@@ -105,6 +111,12 @@ class ExperimentTracker:
                 f"- **Baseline (`{base_row['experiment_id']}`)**: Strategy: `{base_row['retrieval_strategy']}`, Precision@K: `{base_row['precision_at_k']:.3f}`, Recall@K: `{base_row['recall_at_k']:.3f}`, MRR: `{base_row['mrr']:.4f}`, NDCG: `{base_row['ndcg_at_k']:.4f}`, Latency (p95): `{base_row['latency_p95_ms']:.1f}ms`",
                 f"- **Optimal MRR Configuration (`{best_mrr_row['experiment_id']}`)**: Strategy: `{best_mrr_row['retrieval_strategy']}`, MRR: `{best_mrr_row['mrr']:.4f}` (**+{mrr_gain:.1f}% relative gain**)",
                 f"- **Optimal NDCG Configuration (`{best_ndcg_row['experiment_id']}`)**: Strategy: `{best_ndcg_row['retrieval_strategy']}`, NDCG: `{best_ndcg_row['ndcg_at_k']:.4f}` (**+{ndcg_gain:.1f}% relative gain**)",
+                "\n## 3. Resource & Verification Methodology Notes\n",
+                "- **Incremental Memory (Delta RSS)**: Measures the net physical memory change (`RSS_after - RSS_before`) attributable specifically to that experiment pass, capturing native C++/PyTorch allocations as well as Python heap.",
+                "- **Peak Heap**: Measures maximum Python-managed heap allocations traced via `tracemalloc`.",
+                "- **Strict Reranker Validation**: Strict mode is enforced on Cross-Encoder reranking (`strict_mode=True`); silent fallback to lexical reranking is prohibited and raises a hard runtime exception.",
+                "- **Answer Generation Evidence**: When executed with `provider='mock'`, answer F1 and faithfulness reflect deterministic extractive baseline heuristics. Run `python src/experiments/runner.py --llm-provider local` or `--llm-provider gemini` to benchmark neural generation.",
+                "- **Factual Faithfulness**: Evaluates sentence-level claim factual entailment and entity grounding against retrieved evidence passages, rather than bag-of-words token presence."
             ])
 
         content = "\n".join(lines)
@@ -155,6 +167,19 @@ This report analyzes retrieval performance across dense vector search, sparse ke
 2. **Hallucination on Out-of-Corpus Questions**:
    - *Observation*: Without strict thresholding, retrievers return irrelevant chunks with low similarity, leading LLMs to fabricate answers.
    - *Mitigation*: The `LLMGenerator` enforces an explicit abstention threshold and returns a standardized refusal message when grounding is insufficient.
+
+---
+
+## 5. Evaluation Integrity & Methodological Rigor
+1. **Factual Faithfulness vs. Token Overlap**:
+   - Unigram overlap falsely rewards answers containing hallucinated entities as long as stopwords or context terms are repeated.
+   - Our evaluator decomposes answers into individual factual assertions, validating entity and numerical grounding alongside sentence-level entailment against retrieved evidence passages.
+2. **Memory Profiling (Delta RSS & Native PyTorch)**:
+   - Total process RSS conflates previous task allocations with the active pipeline. We track incremental `Delta RSS = RSS_after - RSS_before` alongside Python `tracemalloc` peak heap to capture native C++ memory from PyTorch/FAISS.
+3. **Reranker Strict Mode**:
+   - In production evaluation, silent fallback from cross-encoder to lexical matching creates deceptive performance claims. In strict mode (`strict_mode=True`), model load or inference failure raises a runtime exception immediately.
+4. **LLM Provider Evidence**:
+   - Answer F1 and faithfulness scores obtained with `provider='mock'` reflect extractive heuristics. Actual neural LLM generation must be benchmarked using `EXPERIMENT_LLM_PROVIDER=local` or `gemini`.
 """
         out_path.write_text(content, encoding="utf-8")
         return content

@@ -160,3 +160,15 @@ def test_context_optimizer(test_chunks):
     assert "[Source 1: raft.md" in context_str
     assert "[Source 2: cap.md" in context_str
 
+
+def test_cross_encoder_strict_mode_failure(test_chunks):
+    """Verify that CrossEncoder in strict mode raises RuntimeError on load failure instead of silently falling back."""
+    reranker = CrossEncoderReranker(model_name="nonexistent/invalid-reranker-model-9999", strict_mode=True)
+    from src.ingestion.models import RetrievalResult
+    results = [
+        RetrievalResult(chunk=test_chunks[0], score=0.9, rank=1),
+    ]
+    with pytest.raises(RuntimeError) as exc_info:
+        reranker.rerank("test query", results)
+    assert "strict mode" in str(exc_info.value).lower()
+

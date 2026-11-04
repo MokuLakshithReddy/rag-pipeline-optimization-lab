@@ -37,10 +37,11 @@ jobs:
 
       - name: Execute Controlled Benchmark Suite
         run: |
-          python src/experiments/runner.py
+          python src/experiments/runner.py --llm-provider mock
 
       - name: Verify Benchmark Artifacts
         run: |
           test -f reports/benchmark_results.csv
           test -f reports/experiment_summary.md
           test -f reports/retrieval_analysis.md
+

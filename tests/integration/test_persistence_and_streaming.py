@@ -76,3 +76,4 @@ def test_generator_provider_configuration():
 
     gen_local = LLMGenerator(provider="local")
     assert gen_local.provider in {"local", "mock"}
+

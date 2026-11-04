@@ -53,6 +53,12 @@ class CrossEncoderReranker(BaseReranker):
 
         self._ensure_model()
 
+        if self.strict_mode and (self._model is None or self._load_failed):
+            raise RuntimeError(
+                f"CrossEncoderReranker strict mode enabled: Cross-Encoder model '{self.model_name}' "
+                f"failed to load and cannot silently fall back to lexical reranking: {self._load_error}"
+            )
+
         if self._model is not None and not self._load_failed:
             pairs = [[query, r.chunk.text] for r in results]
             try:

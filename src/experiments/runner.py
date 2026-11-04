@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 import datetime
+import gc
 import json
+import logging
 import os
 from pathlib import Path
+import sys
+
+# Ensure repository root is on sys.path when invoked directly
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import time
 import tracemalloc
 from typing import Any, Dict, List, Optional
@@ -37,7 +46,9 @@ def run_experiment_suite(
     benchmark_path: str | Path = "data/benchmarks/rag_benchmark.json",
     reports_dir: str | Path = "reports",
     embedding_model: str = "all-MiniLM-L6-v2",
-    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """Execute the full suite of controlled optimization experiments."""
     data = load_benchmark_data(benchmark_path)
@@ -126,14 +137,37 @@ def run_experiment_suite(
     ]
 
     embedder = get_embedder(model_name=embedding_model)
-    generator = LLMGenerator(provider="mock")
-    # Strict mode ensures neural cross-encoder runs and does not silently fall back
-    reranker = CrossEncoderReranker(model_name=reranker_model, top_n=3, strict_mode=False)
+
+    # Configurable LLM generator: "mock" for fast offline CI or "local"/"gemini" for real model execution
+    resolved_provider = (
+        llm_provider
+        or os.environ.get("EXPERIMENT_LLM_PROVIDER")
+        or os.environ.get("LLM_PROVIDER")
+        or "mock"
+    )
+    resolved_model = (
+        llm_model
+        or os.environ.get("EXPERIMENT_LLM_MODEL")
+        or os.environ.get("LLM_MODEL_NAME")
+    )
+    generator = LLMGenerator(provider=resolved_provider, model_name=resolved_model)
+
+    # Strict mode guarantees neural cross-encoder runs and raises an error instead of silently falling back
+    reranker = CrossEncoderReranker(model_name=reranker_model, top_n=3, strict_mode=True)
 
     process = psutil.Process()
 
     for exp in experiments:
+        gc.collect()
+        torch_cuda_peak_mb = 0.0
+        if "torch" in sys.modules:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+
         tracemalloc.start()
+        tracemalloc.reset_peak()
         mem_rss_before = process.memory_info().rss / (1024 * 1024)
 
         # 1. Chunking
@@ -174,11 +208,25 @@ def run_experiment_suite(
         )
         metrics = evaluator.evaluate_dataset(queries)
 
+        # 4. Strict reranker status validation
+        if exp["rerank"]:
+            status = metrics.get("reranker_status", "none")
+            if "neural_cross_encoder" not in status:
+                raise RuntimeError(
+                    f"Reranker strict mode check failed for {exp['id']}: expected 'neural_cross_encoder', got '{status}'"
+                )
+
         _, peak_traced_bytes = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
         mem_rss_after = process.memory_info().rss / (1024 * 1024)
+        delta_rss_mb = max(0.0, mem_rss_after - mem_rss_before)
         peak_heap_mb = peak_traced_bytes / (1024 * 1024)
+
+        if "torch" in sys.modules:
+            import torch
+            if torch.cuda.is_available():
+                torch_cuda_peak_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
 
         record = {
             "experiment_id": exp["id"],
@@ -194,6 +242,8 @@ def run_experiment_suite(
             "reranker_model": reranker_model if exp["rerank"] else "none",
             "reranker_status": metrics.get("reranker_status", "none"),
             "query_enhancement": exp["query_enhancement"],
+            "generator_provider": generator.provider,
+            "generator_model": generator.model_name,
             "precision_at_k": metrics["precision_at_k"],
             "recall_at_k": metrics["recall_at_k"],
             "mrr": metrics["mrr"],
@@ -206,8 +256,10 @@ def run_experiment_suite(
             "generation_latency_ms": metrics["generation_latency_ms"],
             "total_latency_mean_ms": metrics["total_latency_mean_ms"],
             "latency_p95_ms": metrics["latency_p95_ms"],
+            "delta_rss_mb": round(delta_rss_mb, 2),
             "memory_rss_mb": round(mem_rss_after, 2),
             "peak_heap_mb": round(peak_heap_mb, 2),
+            "torch_cuda_peak_mb": round(torch_cuda_peak_mb, 2),
         }
 
         tracker.record_run(record)
@@ -221,4 +273,21 @@ def run_experiment_suite(
 
 
 if __name__ == "__main__":
-    run_experiment_suite()
+    import argparse
+    parser = argparse.ArgumentParser(description="Run controlled RAG optimization benchmarks.")
+    parser.add_argument("--benchmark-path", default="data/benchmarks/rag_benchmark.json")
+    parser.add_argument("--reports-dir", default="reports")
+    parser.add_argument("--embedding-model", default="all-MiniLM-L6-v2")
+    parser.add_argument("--reranker-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    parser.add_argument("--llm-provider", default=None, help="LLM provider: 'mock', 'local', or 'gemini'")
+    parser.add_argument("--llm-model", default=None, help="Model name for generator")
+    args = parser.parse_args()
+
+    run_experiment_suite(
+        benchmark_path=args.benchmark_path,
+        reports_dir=args.reports_dir,
+        embedding_model=args.embedding_model,
+        reranker_model=args.reranker_model,
+        llm_provider=args.llm_provider,
+        llm_model=args.llm_model
+    )

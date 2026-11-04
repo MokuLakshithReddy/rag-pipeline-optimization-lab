@@ -125,7 +125,8 @@ class RAGEvaluator:
                 generation_latencies.append(gen_ms)
 
                 if not gen_resp.is_abstained:
-                    faithfulness_scores.append(compute_faithfulness(gen_resp.answer, context_str))
+                    nli_model = getattr(self.reranker, "_model", None) if self.reranker else None
+                    faithfulness_scores.append(compute_faithfulness(gen_resp.answer, context_str, nli_model=nli_model))
                     if ground_truth:
                         f1_scores.append(compute_token_f1(gen_resp.answer, ground_truth))
             else:

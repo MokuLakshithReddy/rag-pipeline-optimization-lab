@@ -17,8 +17,13 @@ class DocumentValidationError(Exception):
 
 
 def sanitize_filename(filename: str) -> str:
-    """Sanitize filename to prevent directory traversal and injection attacks."""
-    basename = os.path.basename(filename)
+    """Sanitize filename to prevent directory traversal and injection attacks.
+    
+    Normalizes both Windows ('\\') and POSIX ('/') path separators before
+    extracting the basename across all host operating systems.
+    """
+    clean_path = str(filename).replace("\\", "/")
+    basename = os.path.basename(clean_path)
     # Remove any directory separators and control characters
     sanitized = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', basename)
     # Ensure it's not empty and does not begin with a dot

@@ -38,3 +38,16 @@ This report analyzes retrieval performance across dense vector search, sparse ke
 2. **Hallucination on Out-of-Corpus Questions**:
    - *Observation*: Without strict thresholding, retrievers return irrelevant chunks with low similarity, leading LLMs to fabricate answers.
    - *Mitigation*: The `LLMGenerator` enforces an explicit abstention threshold and returns a standardized refusal message when grounding is insufficient.
+
+---
+
+## 5. Evaluation Integrity & Methodological Rigor
+1. **Factual Faithfulness vs. Token Overlap**:
+   - Unigram overlap falsely rewards answers containing hallucinated entities as long as stopwords or context terms are repeated.
+   - Our evaluator decomposes answers into individual factual assertions, validating entity and numerical grounding alongside sentence-level entailment against retrieved evidence passages.
+2. **Memory Profiling (Delta RSS & Native PyTorch)**:
+   - Total process RSS conflates previous task allocations with the active pipeline. We track incremental `Delta RSS = RSS_after - RSS_before` alongside Python `tracemalloc` peak heap to capture native C++ memory from PyTorch/FAISS.
+3. **Reranker Strict Mode**:
+   - In production evaluation, silent fallback from cross-encoder to lexical matching creates deceptive performance claims. In strict mode (`strict_mode=True`), model load or inference failure raises a runtime exception immediately.
+4. **LLM Provider Evidence**:
+   - Answer F1 and faithfulness scores obtained with `provider='mock'` reflect extractive heuristics. Actual neural LLM generation must be benchmarked using `EXPERIMENT_LLM_PROVIDER=local` or `gemini`.

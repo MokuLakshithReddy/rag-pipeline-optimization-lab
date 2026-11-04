@@ -76,3 +76,4 @@ def test_faithfulness_bounds():
     assert 0.0 <= f_high <= 1.0
     assert 0.0 <= f_low <= 1.0
     assert f_high > f_low
+
