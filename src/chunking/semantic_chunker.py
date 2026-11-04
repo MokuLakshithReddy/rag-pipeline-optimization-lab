@@ -1,33 +1,53 @@
-"""Semantic chunker partitioning text at semantic shift boundaries."""
+"""Semantic chunker partitioning text at semantic shift boundaries using vector embeddings."""
 
 from __future__ import annotations
 import re
 from typing import Any, Callable, List, Optional
 import numpy as np
+
 from src.chunking.base import BaseChunker
 from src.ingestion.models import Document, DocumentChunk
 
 
 class SemanticChunker(BaseChunker):
-    """Splits text into sentences and clusters them based on semantic similarity shifts."""
+    """Splits text into sentences and clusters them based on semantic vector similarity shifts."""
 
     def __init__(
         self,
         chunk_size: int = 512,
         chunk_overlap: int = 64,
         similarity_threshold: float = 0.65,
-        embed_fn: Optional[Callable[[List[str]], np.ndarray]] = None
+        embed_fn: Optional[Callable[[List[str]], np.ndarray]] = None,
+        embedding_model_name: Optional[str] = "all-MiniLM-L6-v2"
     ):
         super().__init__(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         self.similarity_threshold = similarity_threshold
-        self.embed_fn = embed_fn
+        self._embed_fn = embed_fn
+        self.embedding_model_name = embedding_model_name
+        self._lazy_embedder = None
+
+    def _get_embed_fn(self) -> Callable[[List[str]], np.ndarray]:
+        """Obtain embedding callable, lazy-instantiating default sentence embedder if needed."""
+        if self._embed_fn is not None:
+            return self._embed_fn
+
+        if self._lazy_embedder is None:
+            try:
+                from src.embeddings.registry import get_embedder
+                embedder_instance = get_embedder(model_name=self.embedding_model_name or "all-MiniLM-L6-v2")
+                self._lazy_embedder = embedder_instance.embed_texts
+            except Exception:
+                # Fallback to simple fast deterministic embedder
+                from src.embeddings.fast_embedder import FastDeterministicEmbedder
+                self._lazy_embedder = FastDeterministicEmbedder().embed_texts
+
+        return self._lazy_embedder
 
     def chunk_document(self, document: Document) -> List[DocumentChunk]:
         text = document.text
         if not text:
             return []
 
-        # Split text into sentences
         sentences = self._split_into_sentences(text)
         if len(sentences) <= 1:
             return [
@@ -42,10 +62,8 @@ class SemanticChunker(BaseChunker):
                 )
             ]
 
-        # Calculate breakpoint boundaries
         breakpoints = self._find_breakpoints(sentences)
 
-        # Form chunks from sentence groups
         chunks: List[DocumentChunk] = []
         current_sentences: List[str] = []
         current_len = 0
@@ -85,37 +103,34 @@ class SemanticChunker(BaseChunker):
         return chunks
 
     def _split_into_sentences(self, text: str) -> List[str]:
-        """Split text into sentences cleanly using regex."""
         raw = re.split(r'(?<=[.!?])\s+', text)
         return [s.strip() for s in raw if s.strip()]
 
     def _find_breakpoints(self, sentences: List[str]) -> set:
-        """Identify indices where semantic similarity drops sharply."""
         if len(sentences) <= 1:
             return set()
 
-        if self.embed_fn is not None:
-            try:
-                embeddings = self.embed_fn(sentences)
-                # Compute adjacent cosine similarities
-                breakpoints = set()
-                for i in range(len(embeddings) - 1):
-                    v1 = embeddings[i]
-                    v2 = embeddings[i + 1]
-                    norm1 = np.linalg.norm(v1)
-                    norm2 = np.linalg.norm(v2)
-                    sim = (np.dot(v1, v2) / (norm1 * norm2)) if (norm1 > 0 and norm2 > 0) else 1.0
-                    if sim < self.similarity_threshold:
-                        breakpoints.add(i)
-                return breakpoints
-            except Exception:
-                pass
+        embed_callable = self._get_embed_fn()
+        try:
+            embeddings = embed_callable(sentences)
+            breakpoints = set()
+            for i in range(len(embeddings) - 1):
+                v1 = embeddings[i]
+                v2 = embeddings[i + 1]
+                norm1 = np.linalg.norm(v1)
+                norm2 = np.linalg.norm(v2)
+                sim = (np.dot(v1, v2) / (norm1 * norm2)) if (norm1 > 0 and norm2 > 0) else 1.0
+                if sim < self.similarity_threshold:
+                    breakpoints.add(i)
+            return breakpoints
+        except Exception:
+            pass
 
-        # Fallback: Lexical token Jaccard similarity between adjacent sentences
+        # Lexical Jaccard fallback only if vector embedding fails
         breakpoints = set()
         for i in range(len(sentences) - 1):
-            s1_tokens = set(re.findall(r'\w+', sentences[i].lower()))
-            s2_tokens = set(re.findall(r'\w+', sentences[i + 1].lower()))
+            s1_tokens = set(re.findall(r'\b\w+\b', sentences[i].lower()))
+            s2_tokens = set(re.findall(r'\b\w+\b', sentences[i + 1].lower()))
             if not s1_tokens or not s2_tokens:
                 continue
             intersection = len(s1_tokens & s2_tokens)
@@ -125,4 +140,3 @@ class SemanticChunker(BaseChunker):
                 breakpoints.add(i)
 
         return breakpoints
-

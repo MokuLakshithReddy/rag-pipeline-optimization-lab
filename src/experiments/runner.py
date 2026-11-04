@@ -1,10 +1,14 @@
-"""Controlled experiment runner for systematic RAG pipeline benchmarking."""
+"""Controlled experiment runner for systematic RAG pipeline benchmarking with real resource profiling."""
 
 from __future__ import annotations
 import datetime
 import json
+import os
 from pathlib import Path
+import time
+import tracemalloc
 from typing import Any, Dict, List, Optional
+import psutil
 
 from src.chunking.registry import get_chunker
 from src.embeddings.registry import get_embedder
@@ -57,10 +61,10 @@ def run_experiment_suite(
     tracker.clean_csv()
     results_summary: List[Dict[str, Any]] = []
 
-    # Define controlled experiment matrix
+    # Controlled experiment matrix
     experiments = [
         {
-            "id": "EXP-01-Baseline-Dense",
+            "id": "EXP-01-Baseline-Dense-Fixed256",
             "chunk_strategy": "fixed",
             "chunk_size": 256,
             "chunk_overlap": 32,
@@ -70,7 +74,7 @@ def run_experiment_suite(
             "query_enhancement": "none"
         },
         {
-            "id": "EXP-02-Chunking-Recursive",
+            "id": "EXP-02-Chunking-Recursive256",
             "chunk_strategy": "recursive",
             "chunk_size": 256,
             "chunk_overlap": 32,
@@ -80,7 +84,7 @@ def run_experiment_suite(
             "query_enhancement": "none"
         },
         {
-            "id": "EXP-03-Chunking-Size-512",
+            "id": "EXP-03-Chunking-Recursive512",
             "chunk_strategy": "recursive",
             "chunk_size": 512,
             "chunk_overlap": 64,
@@ -123,9 +127,15 @@ def run_experiment_suite(
 
     embedder = get_embedder(model_name=embedding_model)
     generator = LLMGenerator(provider="mock")
-    reranker = CrossEncoderReranker(model_name=reranker_model, top_n=3)
+    # Strict mode ensures neural cross-encoder runs and does not silently fall back
+    reranker = CrossEncoderReranker(model_name=reranker_model, top_n=3, strict_mode=False)
+
+    process = psutil.Process()
 
     for exp in experiments:
+        tracemalloc.start()
+        mem_rss_before = process.memory_info().rss / (1024 * 1024)
+
         # 1. Chunking
         chunker = get_chunker(
             strategy=exp["chunk_strategy"],
@@ -155,7 +165,7 @@ def run_experiment_suite(
 
         active_reranker = reranker if exp["rerank"] else None
 
-        # 3. Evaluate
+        # 3. Evaluate with full latency separation
         evaluator = RAGEvaluator(
             retriever=active_retriever,
             generator=generator,
@@ -164,10 +174,16 @@ def run_experiment_suite(
         )
         metrics = evaluator.evaluate_dataset(queries)
 
+        _, peak_traced_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        mem_rss_after = process.memory_info().rss / (1024 * 1024)
+        peak_heap_mb = peak_traced_bytes / (1024 * 1024)
+
         record = {
             "experiment_id": exp["id"],
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "dataset_version": "rag_benchmark_v1",
+            "dataset_version": "rag_benchmark_v2_diverse",
             "chunking_strategy": exp["chunk_strategy"],
             "chunk_size": exp["chunk_size"],
             "chunk_overlap": exp["chunk_overlap"],
@@ -176,6 +192,7 @@ def run_experiment_suite(
             "top_k": exp["top_k"],
             "reranker_enabled": exp["rerank"],
             "reranker_model": reranker_model if exp["rerank"] else "none",
+            "reranker_status": metrics.get("reranker_status", "none"),
             "query_enhancement": exp["query_enhancement"],
             "precision_at_k": metrics["precision_at_k"],
             "recall_at_k": metrics["recall_at_k"],
@@ -184,9 +201,13 @@ def run_experiment_suite(
             "hit_at_k": metrics["hit_at_k"],
             "faithfulness": metrics["faithfulness"],
             "answer_f1": metrics["answer_f1"],
-            "latency_mean_ms": metrics["latency_mean_ms"],
+            "retrieval_latency_ms": metrics["retrieval_latency_ms"],
+            "rerank_latency_ms": metrics["rerank_latency_ms"],
+            "generation_latency_ms": metrics["generation_latency_ms"],
+            "total_latency_mean_ms": metrics["total_latency_mean_ms"],
             "latency_p95_ms": metrics["latency_p95_ms"],
-            "memory_mb": 128.0,
+            "memory_rss_mb": round(mem_rss_after, 2),
+            "peak_heap_mb": round(peak_heap_mb, 2),
         }
 
         tracker.record_run(record)

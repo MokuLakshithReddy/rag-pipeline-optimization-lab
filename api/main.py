@@ -1,6 +1,7 @@
 """FastAPI backend application for the RAG optimization platform."""
 
 from __future__ import annotations
+from contextlib import asynccontextmanager
 import logging
 import os
 import time
@@ -37,10 +38,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger("api")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifecycle manager: Restores persisted state on startup."""
+    logger.info("Initializing API application lifecycle...")
+    restored = pipeline_state.restore_state()
+    if restored:
+        logger.info(f"Auto-restored {len(pipeline_state.documents)} docs and {len(pipeline_state.chunks)} chunks.")
+    yield
+    logger.info("Shutting down API application...")
+
+
 app = FastAPI(
     title="RAG Pipeline Optimization & Experimentation Lab API",
     version="0.1.0",
-    description="Production-grade API for Retrieval-Augmented Generation benchmarking and optimization."
+    description="Production-grade API for Retrieval-Augmented Generation benchmarking and optimization.",
+    lifespan=lifespan
 )
 
 # Security: Restrictive CORS configuration
@@ -60,6 +74,8 @@ app.add_middleware(
 async def add_security_and_timing_headers(request: Request, call_next):
     """Enforce request IDs, measure latency, and add security headers."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    # Attach to request state so downstream endpoints share the identical request_id
+    request.state.request_id = request_id
     start_time = time.perf_counter()
 
     try:
@@ -93,7 +109,7 @@ async def health_check():
 
 @app.post("/v1/documents", response_model=DocumentUploadResponse, tags=["Documents"])
 async def upload_documents(files: List[UploadFile] = File(...)):
-    """Upload and ingest one or more documents safely."""
+    """Upload and ingest one or more documents with bounded chunked streaming."""
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded.")
 
@@ -102,14 +118,32 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 
     for file in files:
         safe_name = sanitize_filename(file.filename or "upload.txt")
-        content = await file.read()
+        
+        # Stream read file in 64KB blocks, aborting if size exceeds ceiling before full memory read
+        chunks_data: List[bytes] = []
+        bytes_read = 0
+        CHUNK_SIZE = 64 * 1024
+
+        while True:
+            chunk = await file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            bytes_read += len(chunk)
+            if bytes_read > DEFAULT_MAX_FILE_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail=f"File '{safe_name}' exceeds maximum permitted size of {DEFAULT_MAX_FILE_SIZE_BYTES / (1024*1024):.1f}MB."
+                )
+            chunks_data.append(chunk)
+
+        content = b"".join(chunks_data)
 
         is_valid, err_msg = validate_file_metadata(safe_name, len(content), max_size_bytes=DEFAULT_MAX_FILE_SIZE_BYTES)
         if not is_valid:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File '{safe_name}': {err_msg}")
 
         try:
-            new_docs = pipeline_state.ingest_bytes(content, filename=safe_name)
+            new_docs = pipeline_state.ingest_bytes(content, filename=safe_name, persist=True)
             total_new_docs += len(new_docs)
             uploaded_names.append(safe_name)
         except DocumentValidationError as dve:
@@ -141,7 +175,7 @@ async def list_documents():
 
 @app.post("/v1/index", response_model=IndexResponse, tags=["Index"])
 async def build_index(req: IndexRequest):
-    """Trigger chunking and vector/sparse index construction."""
+    """Trigger chunking, vector/sparse index construction, and disk persistence."""
     if not pipeline_state.documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -171,7 +205,7 @@ async def build_index(req: IndexRequest):
 @app.post("/v1/query", response_model=QueryResponse, tags=["Query"])
 async def query_pipeline(req: QueryRequest, request: Request):
     """Query the RAG pipeline with selected retrieval and reranking configuration."""
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    request_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())
 
     if not pipeline_state.chunks:
         raise HTTPException(
@@ -211,4 +245,3 @@ async def get_experiments():
     df = pd.read_csv(csv_file)
     records = df.to_dict(orient="records")
     return ExperimentListResponse(total=len(records), experiments=records)
-

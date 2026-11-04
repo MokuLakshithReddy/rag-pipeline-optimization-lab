@@ -1,87 +1,274 @@
 {
   "corpus": [
     {
-      "id": "doc_dist_sys_01",
-      "source": "distributed_consensus.md",
-      "text": "The Raft consensus algorithm is designed to be understandable and modular. Raft relies on leader election, log replication, and safety invariants. In Raft, a leader is elected when a follower experiences an election timeout and transitions to candidate state, requesting votes from peers with Term ID."
+      "id": "doc_dist_raft",
+      "source": "distributed_raft.md",
+      "text": "The Raft consensus algorithm achieves replicated state machine safety via decomposed subproblems: leader election, log replication, and safety. A follower transitions to candidate state upon election timeout, increments the current term, and broadcasts RequestVote RPCs. A leader requires a majority quorum before committing log entries."
     },
     {
-      "id": "doc_dist_sys_02",
-      "source": "cap_theorem.md",
-      "text": "Eric Brewer's CAP Theorem posits that any distributed data store can simultaneously provide at most two of three guarantees: Consistency, Availability, and Partition Tolerance. In the presence of a network partition, the system must choose between consistency and availability."
+      "id": "doc_dist_paxos",
+      "source": "distributed_paxos.md",
+      "text": "Classic Paxos consensus proceeds in two distinct phases: Phase 1 (Prepare and Promise) where a proposer seeks promises for a proposal number n, and Phase 2 (Accept and Accepted) where acceptors register consensus on value v. Multi-Paxos optimizes this by electing a stable leader to bypass Phase 1 for subsequent log instances."
     },
     {
-      "id": "doc_vectordb_01",
-      "source": "vector_indexing.txt",
-      "text": "Hierarchical Navigable Small World (HNSW) graphs are multi-layer proximity graphs used for approximate nearest neighbor (ANN) search. HNSW achieves logarithmic search scaling O(log N) with high recall and is widely deployed in production vector databases like Milvus, Qdrant, and Faiss."
+      "id": "doc_dist_bft",
+      "source": "byzantine_fault_tolerance.md",
+      "text": "Practical Byzantine Fault Tolerance (PBFT) provides consensus in distributed systems with malicious or faulty nodes. PBFT requires 3f + 1 total replicas to tolerate up to f arbitrary Byzantine failures, executing through pre-prepare, prepare, and commit phases."
     },
     {
-      "id": "doc_vectordb_02",
-      "source": "dense_sparse_fusion.txt",
-      "text": "Reciprocal Rank Fusion (RRF) is a method that combines multiple retrieval result sets with different scoring distributions. RRF computes score as sum of 1 / (k + rank) where constant k is typically set to 60. RRF avoids score normalization artifacts between BM25 and cosine embeddings."
+      "id": "doc_dist_gossip",
+      "source": "gossip_protocols.md",
+      "text": "Epidemic gossip protocols propagate state information periodically to random peer nodes with O(log N) rounds to achieve eventual consistency across large clusters, widely utilized in Apache Cassandra cluster membership discovery."
     },
     {
-      "id": "doc_security_01",
-      "source": "api_security_standards.md",
-      "text": "Cross-Origin Resource Sharing (CORS) security policies restrict web applications running at one origin from requesting resources from a different origin. For production API endpoints, wildcards ('*') in Access-Control-Allow-Origin must be avoided when credentials like cookies or Authorization headers are transmitted."
+      "id": "doc_dist_vector_clocks",
+      "source": "vector_clocks.md",
+      "text": "Vector clocks determine the partial ordering of events in distributed systems without synchronized physical clocks. Each process maintains a vector of logical counters, allowing detection of concurrent conflicting writes versus causal relationships."
     },
     {
-      "id": "doc_security_02",
+      "id": "doc_db_lsm",
+      "source": "lsm_tree_storage.md",
+      "text": "Log-Structured Merge-trees (LSM-trees) optimize write-heavy database workloads by appending sequential writes to an in-memory MemTable and Write-Ahead Log (WAL), flushing immutable SSTables to disk and running periodic background compaction."
+    },
+    {
+      "id": "doc_db_bplus",
+      "source": "bplus_tree_storage.md",
+      "text": "B+ Trees maintain balanced disk-based hierarchical search indexes where internal nodes store routing keys and leaf nodes store sorted records linked horizontally. B+ Trees minimize random disk seeks for range queries compared to binary trees."
+    },
+    {
+      "id": "doc_db_wal",
+      "source": "write_ahead_logging.md",
+      "text": "Write-Ahead Logging (WAL) enforces ACID durability by requiring transaction log records describing changes to be flushed to non-volatile disk before dirty database pages are written to data files (ARIES recovery protocol)."
+    },
+    {
+      "id": "doc_db_mvcc",
+      "source": "mvcc_concurrency.md",
+      "text": "Multi-Version Concurrency Control (MVCC) enables concurrent reads and writes without read locks by maintaining multiple physical row versions tagged with transaction visibility timestamps (xmin and xmax in PostgreSQL)."
+    },
+    {
+      "id": "doc_db_isolation",
+      "source": "database_isolation_levels.md",
+      "text": "ANSI SQL defines four transaction isolation levels: Read Uncommitted, Read Committed, Repeatable Read, and Serializable. Serializable isolation prevents phantom reads, non-repeatable reads, and dirty reads, often via Serializable Snapshot Isolation (SSI)."
+    },
+    {
+      "id": "doc_ir_bm25",
+      "source": "okapi_bm25_formula.md",
+      "text": "The Okapi BM25 ranking function evaluates lexical relevance based on term frequency (TF) and inverse document frequency (IDF). Parameters k1 controls term frequency saturation non-linearity (typically 1.2 to 2.0) and b governs document length normalization (typically 0.75)."
+    },
+    {
+      "id": "doc_ir_hnsw",
+      "source": "hnsw_vector_graphs.md",
+      "text": "Hierarchical Navigable Small World (HNSW) graphs perform approximate nearest neighbor (ANN) vector search across multi-layer proximity subgraphs with logarithmic search scaling O(log N). Higher layers provide long-distance routing while the bottom layer performs local refinement."
+    },
+    {
+      "id": "doc_ir_inverted_index",
+      "source": "inverted_index_compression.md",
+      "text": "Inverted index engines like Lucene compress document posting lists using variable-byte encoding and SIMD-accelerated delta PForDelta compression to reduce RAM overhead during boolean term intersections."
+    },
+    {
+      "id": "doc_ir_rrf",
+      "source": "reciprocal_rank_fusion.md",
+      "text": "Reciprocal Rank Fusion (RRF) combines diverse retrieval result sets using the formula: score = sum(w / (k + rank)). Constant k (standard 60) dampens the impact of extreme top ranks, eliminating the need for calibration across mismatched scoring distributions."
+    },
+    {
+      "id": "doc_ir_cross_encoder",
+      "source": "cross_encoder_reranker.md",
+      "text": "Cross-Encoder models feed concatenated query and passage pairs into transformer self-attention layers simultaneously, capturing fine-grained token-level interactions. Cross-Encoders achieve superior ranking precision over dual-encoder bi-encoders at the expense of higher inference latency."
+    },
+    {
+      "id": "doc_sec_cors",
+      "source": "cors_security_standards.md",
+      "text": "Cross-Origin Resource Sharing (CORS) enforces browser-side origin isolation. Using a wildcard ('*') for Access-Control-Allow-Origin alongside Access-Control-Allow-Credentials: true is rejected by modern browsers to protect authenticated session cookies."
+    },
+    {
+      "id": "doc_sec_prompt_injection",
       "source": "prompt_injection_defense.md",
-      "text": "Indirect prompt injection attacks occur when malicious instructions are embedded within untrusted documents retrieved by a RAG system. Defenses include input framing with strict boundary tags, instruction-following refusal guards, and treating all retrieved content strictly as reference data."
+      "text": "Indirect prompt injection occurs when adversarial content in retrieved external documents hijacks LLM instructions. Robust defenses include strict XML/delimiter input framing, context privilege separation, and treating retrieved text exclusively as data."
     },
     {
-      "id": "doc_rag_eval_01",
-      "source": "retrieval_metrics.txt",
-      "text": "Mean Reciprocal Rank (MRR) evaluates the quality of ranked retrieval by taking the reciprocal of the rank at which the first relevant document is found: MRR = (1/|Q|) * sum(1 / rank_i). NDCG evaluates graded relevance across all top-K positions with logarithmic discounting."
+      "id": "doc_sec_tls",
+      "source": "tls_zero_rtt_risks.md",
+      "text": "TLS 1.3 supports 0-RTT (Early Data) resumption to eliminate connection handshake roundtrips. However, 0-RTT data is susceptible to network replay attacks and must strictly be restricted to idempotent HTTP GET requests."
+    },
+    {
+      "id": "doc_sec_pkce",
+      "source": "oauth_pkce_standard.md",
+      "text": "Proof Key for Code Exchange (PKCE, RFC 7636) prevents authorization code interception attacks on public clients by requiring a cryptographically random code_verifier and SHA-256 hashed code_challenge during OAuth token exchange."
+    },
+    {
+      "id": "doc_sec_jwt",
+      "source": "jwt_vulnerabilities.md",
+      "text": "JSON Web Token (JWT) security vulnerabilities frequently arise from accepting the 'none' signature algorithm or failing to verify key identity headers (kid) against SQL injection and path traversal in verification key lookups."
+    },
+    {
+      "id": "doc_ml_flash_attn",
+      "source": "flash_attention_internals.md",
+      "text": "FlashAttention optimizes transformer attention computation by tiling softmax blocks in fast GPU SRAM, avoiding the materialization of huge N-by-N attention matrices in high-bandwidth memory (HBM), reducing memory complexity from quadratic to linear IO."
+    },
+    {
+      "id": "doc_ml_kv_cache",
+      "source": "kv_cache_quantization.md",
+      "text": "During autoregressive LLM decoding, Key-Value (KV) cache stores past token key and value projections. Quantizing KV-cache from FP16 to INT8 or INT4 halves inference VRAM consumption while preserving generation perplexity."
+    },
+    {
+      "id": "doc_ml_lora",
+      "source": "lora_parameter_efficiency.md",
+      "text": "Low-Rank Adaptation (LoRA) freezes pretrained foundation model weights and injects trainable rank decomposition matrices A and B (where rank r << d) into attention projection layers, reducing trainable parameters by over 99%."
+    },
+    {
+      "id": "doc_ml_speculative_decoding",
+      "source": "speculative_decoding.md",
+      "text": "Speculative decoding accelerates language model generation by employing a smaller draft model to propose candidate token sequences, which the target model verifies in parallel in a single forward pass, achieving 2x to 3x wall-clock speedup."
+    },
+    {
+      "id": "doc_ml_decoding_strategies",
+      "source": "beam_search_vs_nucleus.md",
+      "text": "Greedy search selects highest probability tokens, beam search maintains the top-B highest cumulative probability hypotheses for deterministic translation tasks, while Nucleus (Top-p) sampling dynamically truncates vocabulary to the top probability mass."
+    },
+    {
+      "id": "doc_os_tcp_cubic",
+      "source": "tcp_cubic_congestion.md",
+      "text": "TCP CUBIC is a congestion control algorithm designed for high-bandwidth, high-latency networks. CUBIC adjusts its congestion window using a cubic function of elapsed time since the last packet loss rather than linear additive increase."
+    },
+    {
+      "id": "doc_os_epoll",
+      "source": "epoll_event_loop.md",
+      "text": "Linux epoll provides O(1) edge-triggered or level-triggered IO multiplexing, avoiding the linear O(N) file descriptor table scanning overhead of classic select() and poll() system calls in high-concurrency network servers."
+    },
+    {
+      "id": "doc_os_cow",
+      "source": "copy_on_write_paging.md",
+      "text": "Copy-on-Write (COW) memory management defers physical memory page duplication during process fork() operations. Parent and child processes share identical read-only physical pages until either process attempts a write, triggering a page fault that allocates a private copy."
+    },
+    {
+      "id": "doc_os_quic",
+      "source": "quic_transport_protocol.md",
+      "text": "The QUIC transport protocol operates over UDP to eliminate TCP head-of-line blocking across independent streams, combining cryptographic TLS 1.3 handshake negotiation directly with transport connection establishment."
+    },
+    {
+      "id": "doc_os_virtual_memory",
+      "source": "virtual_memory_mmu.md",
+      "text": "The Memory Management Unit (MMU) uses multi-level page tables and a Translation Lookaside Buffer (TLB) cache to translate virtual addresses into physical addresses, isolating process memory spaces and preventing illegal memory access."
     }
   ],
   "benchmark_queries": [
     {
-      "query_id": "q1",
-      "query": "How does Raft leader election work when an election timeout occurs?",
-      "relevant_doc_ids": ["distributed_consensus.md"],
-      "ground_truth_answer": "In Raft, a leader is elected when a follower experiences an election timeout and transitions to candidate state, requesting votes from peers with Term ID."
+      "query_id": "q1_sem_paraphrase_mvcc",
+      "query": "techniques that avert locking during simultaneous record inspection and modification",
+      "relevant_doc_ids": ["mvcc_concurrency.md"],
+      "ground_truth_answer": "MVCC enables concurrent reads and writes without read locks by maintaining multiple physical row versions tagged with transaction visibility timestamps."
     },
     {
-      "query_id": "q2",
-      "query": "What are the trade-offs in CAP Theorem during a network partition?",
-      "relevant_doc_ids": ["cap_theorem.md"],
-      "ground_truth_answer": "In the presence of a network partition, the system must choose between consistency and availability."
+      "query_id": "q2_sem_paraphrase_quic",
+      "query": "eliminating sequential blocking in datagram transport across concurrent streams",
+      "relevant_doc_ids": ["quic_transport_protocol.md"],
+      "ground_truth_answer": "The QUIC transport protocol operates over UDP to eliminate TCP head-of-line blocking across independent streams."
     },
     {
-      "query_id": "q3",
-      "query": "What algorithmic complexity and graph structure does HNSW use for ANN search?",
-      "relevant_doc_ids": ["vector_indexing.txt"],
-      "ground_truth_answer": "HNSW uses multi-layer proximity graphs and achieves logarithmic search scaling O(log N) for approximate nearest neighbor search."
+      "query_id": "q3_sem_paraphrase_wal",
+      "query": "preserving committed database mutations across system power failures prior to persisting pages",
+      "relevant_doc_ids": ["write_ahead_logging.md"],
+      "ground_truth_answer": "WAL requires transaction log records describing changes to be flushed to disk before dirty database pages are written to data files."
     },
     {
-      "query_id": "q4",
-      "query": "How does Reciprocal Rank Fusion combine BM25 and vector scores without normalization?",
-      "relevant_doc_ids": ["dense_sparse_fusion.txt"],
-      "ground_truth_answer": "Reciprocal Rank Fusion computes score as sum of 1 / (k + rank) where constant k is typically set to 60, avoiding score normalization artifacts."
+      "query_id": "q4_kw_symbol_bft",
+      "query": "3f + 1 pre-prepare prepare commit arbitrary nodes",
+      "relevant_doc_ids": ["byzantine_fault_tolerance.md"],
+      "ground_truth_answer": "PBFT requires 3f + 1 total replicas to tolerate up to f arbitrary Byzantine failures."
     },
     {
-      "query_id": "q5",
-      "query": "Why should CORS Access-Control-Allow-Origin avoid wildcard with credentials?",
-      "relevant_doc_ids": ["api_security_standards.md"],
-      "ground_truth_answer": "Wildcards in Access-Control-Allow-Origin must be avoided when credentials like cookies or Authorization headers are transmitted."
+      "query_id": "q5_kw_param_bm25",
+      "query": "k1 saturation b 0.75 inverse document frequency",
+      "relevant_doc_ids": ["okapi_bm25_formula.md"],
+      "ground_truth_answer": "Parameter k1 controls term frequency saturation non-linearity and b governs document length normalization."
     },
     {
-      "query_id": "q6",
-      "query": "How can indirect prompt injection attacks in RAG pipelines be defended?",
+      "query_id": "q6_kw_rfc_pkce",
+      "query": "RFC 7636 code_verifier code_challenge SHA-256",
+      "relevant_doc_ids": ["oauth_pkce_standard.md"],
+      "ground_truth_answer": "PKCE requires a cryptographically random code_verifier and SHA-256 hashed code_challenge during OAuth token exchange."
+    },
+    {
+      "query_id": "q7_concept_vector_hnsw",
+      "query": "hierarchical proximity graph logarithmic approximate nearest neighbor retrieval",
+      "relevant_doc_ids": ["hnsw_vector_graphs.md"],
+      "ground_truth_answer": "Hierarchical Navigable Small World (HNSW) graphs perform approximate nearest neighbor vector search across multi-layer proximity subgraphs with logarithmic search scaling O(log N)."
+    },
+    {
+      "query_id": "q8_multi_rrf_fusion",
+      "query": "combining ranked lists formula sum w / (k + rank) damping constant 60",
+      "relevant_doc_ids": ["reciprocal_rank_fusion.md"],
+      "ground_truth_answer": "Reciprocal Rank Fusion combines diverse retrieval result sets using the formula: score = sum(w / (k + rank)) where constant k is standard 60."
+    },
+    {
+      "query_id": "q9_sec_cors_wildcard",
+      "query": "Why does Access-Control-Allow-Credentials prohibit wildcard in CORS?",
+      "relevant_doc_ids": ["cors_security_standards.md"],
+      "ground_truth_answer": "Using a wildcard for Access-Control-Allow-Origin alongside Access-Control-Allow-Credentials: true is rejected by modern browsers to protect authenticated session cookies."
+    },
+    {
+      "query_id": "q10_sec_prompt_injection",
+      "query": "safeguarding language models from adversarial instructions embedded in retrieved external context",
       "relevant_doc_ids": ["prompt_injection_defense.md"],
-      "ground_truth_answer": "Defenses include input framing with strict boundary tags, instruction-following refusal guards, and treating all retrieved content strictly as reference data."
+      "ground_truth_answer": "Robust defenses include strict XML/delimiter input framing, context privilege separation, and treating retrieved text exclusively as data."
     },
     {
-      "query_id": "q7",
-      "query": "What formula defines Mean Reciprocal Rank (MRR) in retrieval evaluation?",
-      "relevant_doc_ids": ["retrieval_metrics.txt"],
-      "ground_truth_answer": "MRR is defined as (1/|Q|) * sum(1 / rank_i), taking the reciprocal of the rank at which the first relevant document is found."
+      "query_id": "q11_ml_flash_attention",
+      "query": "FlashAttention GPU SRAM softmax block tiling linear IO",
+      "relevant_doc_ids": ["flash_attention_internals.md"],
+      "ground_truth_answer": "FlashAttention optimizes transformer attention computation by tiling softmax blocks in fast GPU SRAM, avoiding the materialization of huge N-by-N attention matrices in HBM."
     },
     {
-      "query_id": "q8_unanswerable",
-      "query": "What is the orbital velocity of the Hubble Space Telescope?",
+      "query_id": "q12_db_lsm_memtable",
+      "query": "sequential write log MemTable immutable SSTable disk compaction",
+      "relevant_doc_ids": ["lsm_tree_storage.md"],
+      "ground_truth_answer": "LSM-trees append sequential writes to an in-memory MemTable and Write-Ahead Log, flushing immutable SSTables to disk."
+    },
+    {
+      "query_id": "q13_os_epoll_event",
+      "query": "Linux epoll O(1) edge-triggered vs select file descriptor table scanning",
+      "relevant_doc_ids": ["epoll_event_loop.md"],
+      "ground_truth_answer": "Linux epoll provides O(1) edge-triggered or level-triggered IO multiplexing, avoiding the linear O(N) file descriptor table scanning overhead of select."
+    },
+    {
+      "query_id": "q14_ambig_dist_raft_election",
+      "query": "RequestVote RPC term increments majority quorum candidate transition",
+      "relevant_doc_ids": ["distributed_raft.md"],
+      "ground_truth_answer": "A follower transitions to candidate state upon election timeout, increments the current term, and broadcasts RequestVote RPCs."
+    },
+    {
+      "query_id": "q15_ambig_dist_paxos_leader",
+      "query": "Multi-Paxos stable leader Phase 1 bypass proposal number",
+      "relevant_doc_ids": ["distributed_paxos.md"],
+      "ground_truth_answer": "Multi-Paxos optimizes this by electing a stable leader to bypass Phase 1 for subsequent log instances."
+    },
+    {
+      "query_id": "q16_ml_kv_cache_quant",
+      "query": "halving autoregressive transformer VRAM via Key-Value projection INT8 quantization",
+      "relevant_doc_ids": ["kv_cache_quantization.md"],
+      "ground_truth_answer": "Quantizing KV-cache from FP16 to INT8 or INT4 halves inference VRAM consumption while preserving generation perplexity."
+    },
+    {
+      "query_id": "q17_os_cow_fork",
+      "query": "process memory allocation deferred physical page copying fork write fault",
+      "relevant_doc_ids": ["copy_on_write_paging.md"],
+      "ground_truth_answer": "Parent and child processes share identical read-only physical pages until either process attempts a write, triggering a page fault that allocates a private copy."
+    },
+    {
+      "query_id": "q18_sec_tls_replay",
+      "query": "TLS 1.3 0-RTT early data resumption network replay attacks",
+      "relevant_doc_ids": ["tls_zero_rtt_risks.md"],
+      "ground_truth_answer": "0-RTT data is susceptible to network replay attacks and must strictly be restricted to idempotent HTTP GET requests."
+    },
+    {
+      "query_id": "q19_unanswerable_astronomy",
+      "query": "What is the escape velocity of the exoplanet Proxima Centauri b?",
+      "relevant_doc_ids": [],
+      "ground_truth_answer": "I do not have sufficient information in the provided context to answer this question."
+    },
+    {
+      "query_id": "q20_unanswerable_history",
+      "query": "Who signed the Treaty of Tordesillas in 1494?",
       "relevant_doc_ids": [],
       "ground_truth_answer": "I do not have sufficient information in the provided context to answer this question."
     }

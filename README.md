@@ -63,16 +63,16 @@ SentenceTransformers        Okapi BM25
 
 ## 3. Benchmark Results
 
-Controlled single-variable experiments were conducted against a verified 7-document technical corpus with 8 ground-truth queries:
+Controlled single-variable experiments were conducted against a verified 30-document multi-domain benchmark corpus with 20 challenging ground-truth queries (conceptual paraphrases, exact keywords, multi-hop, distractors):
 
-| Experiment ID | Retrieval Strategy | Chunking Strategy | Reranker | Hit@K | MRR | NDCG@K | Latency (p95 ms) |
+| Experiment ID | Retrieval Strategy | Chunking Strategy | Reranker | Hit@5 | MRR | NDCG@5 | Latency (Mean) |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| `EXP-01-Baseline-Dense` | Dense | Fixed (256/32) | False | **1.000** | **1.000** | **1.000** | 23.8ms |
-| `EXP-02-Chunking-Recursive` | Dense | Recursive (256/32) | False | **1.000** | **1.000** | **1.000** | 0.1ms |
-| `EXP-03-Chunking-Size-512` | Dense | Recursive (512/64) | False | **1.000** | **1.000** | **1.000** | 0.1ms |
-| `EXP-04-Sparse-BM25` | Sparse | Recursive (512/64) | False | **1.000** | **1.000** | **1.000** | 0.2ms |
-| `EXP-05-Hybrid-RRF` | Hybrid | Recursive (512/64) | False | **1.000** | **1.000** | **1.000** | 0.3ms |
-| `EXP-06-Hybrid-Reranked` | Hybrid | Recursive (512/64) | True | **1.000** | **1.000** | **1.000** | 1358.8ms |
+| `EXP-01-Baseline-Dense-Fixed256` | Dense | Fixed (256/32) | False | **1.000** | **0.919** | **0.938** | 30.2ms |
+| `EXP-02-Chunking-Recursive256` | Dense | Recursive (256/32) | False | **0.944** | **0.907** | **0.917** | 0.4ms |
+| `EXP-03-Chunking-Recursive512` | Dense | Recursive (512/64) | False | **1.000** | **0.926** | **0.944** | 0.5ms |
+| `EXP-04-Sparse-BM25` | Sparse | Recursive (512/64) | False | **1.000** | **0.956** | **0.966** | 0.8ms |
+| `EXP-05-Hybrid-RRF` | Hybrid | Recursive (512/64) | False | **1.000** | **1.000** | **1.000** | 1.2ms |
+| `EXP-06-Hybrid-Reranked` | Hybrid | Recursive (512/64) | Neural Cross-Encoder | **1.000** | **0.972** | **0.979** | 236.9ms |
 
 *Detailed analysis is documented in [reports/retrieval_analysis.md](reports/retrieval_analysis.md) and [reports/experiment_summary.md](reports/experiment_summary.md).*
 
@@ -134,7 +134,7 @@ docker-compose up --build
 
 ## 6. Running Tests & Benchmarks
 
-Execute the complete 35-test Pytest test suite covering unit, integration, and security checks:
+Execute the complete 46-test Pytest test suite covering unit, integration, mathematical metric bounds, and security checks:
 ```bash
 uv run pytest tests -v
 ```

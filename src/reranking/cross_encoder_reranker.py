@@ -1,12 +1,15 @@
-"""Cross-Encoder reranking implementation with robust fallback."""
+"""Cross-Encoder reranking implementation with transparent status tracking and strict mode."""
 
 from __future__ import annotations
+import logging
 import re
 from typing import List, Optional
 import numpy as np
 
 from src.ingestion.models import RetrievalResult
 from src.reranking.base import BaseReranker
+
+logger = logging.getLogger("reranker")
 
 
 class CrossEncoderReranker(BaseReranker):
@@ -17,12 +20,15 @@ class CrossEncoderReranker(BaseReranker):
         model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
         top_n: int = 3,
         device: str = "cpu",
-        lazy_load: bool = True
+        lazy_load: bool = True,
+        strict_mode: bool = False
     ):
         super().__init__(model_name=model_name, top_n=top_n)
         self.device = device
+        self.strict_mode = strict_mode
         self._model = None
         self._load_failed = False
+        self._load_error: Optional[str] = None
         if not lazy_load:
             self._ensure_model()
 
@@ -31,8 +37,15 @@ class CrossEncoderReranker(BaseReranker):
             try:
                 from sentence_transformers import CrossEncoder
                 self._model = CrossEncoder(self.model_name, device=self.device)
-            except Exception:
+                logger.info(f"Loaded CrossEncoder model: {self.model_name}")
+            except Exception as e:
                 self._load_failed = True
+                self._load_error = str(e)
+                logger.warning(f"Failed to load CrossEncoder ({self.model_name}): {e}")
+                if self.strict_mode:
+                    raise RuntimeError(
+                        f"CrossEncoderReranker strict mode enabled: Failed to load '{self.model_name}': {e}"
+                    )
 
     def rerank(self, query: str, results: List[RetrievalResult]) -> List[RetrievalResult]:
         if not results:
@@ -44,7 +57,6 @@ class CrossEncoderReranker(BaseReranker):
             pairs = [[query, r.chunk.text] for r in results]
             try:
                 scores = self._model.predict(pairs, show_progress_bar=False)
-                # Sort indices by descending score
                 sorted_indices = np.argsort(scores)[::-1]
                 effective_n = min(self.top_n, len(results))
                 reranked: List[RetrievalResult] = []
@@ -56,13 +68,14 @@ class CrossEncoderReranker(BaseReranker):
                             chunk=orig.chunk,
                             score=float(scores[idx]),
                             rank=rank,
-                            retriever_type="cross_encoder_reranked"
+                            retriever_type="neural_cross_encoder"
                         )
                     )
                 return reranked
-            except Exception:
-                # Fall back to lexical scoring if inference fails
-                pass
+            except Exception as e:
+                if self.strict_mode:
+                    raise RuntimeError(f"Cross-encoder inference failed in strict mode: {e}")
+                logger.warning(f"Cross-encoder inference failed ({e}), using lexical fallback.")
 
         return self._lexical_fallback_rerank(query, results)
 
@@ -75,10 +88,7 @@ class CrossEncoderReranker(BaseReranker):
             c_tokens = re.findall(r'\b\w+\b', r.chunk.text.lower())
             c_set = set(c_tokens)
             overlap = len(q_tokens & c_set)
-            # Position bonus if terms appear near the beginning
-            bonus = 0.0
-            if any(t in c_tokens[:20] for t in q_tokens):
-                bonus = 0.5
+            bonus = 0.5 if any(t in c_tokens[:20] for t in q_tokens) else 0.0
             lex_score = overlap + bonus + (0.1 * r.score)
             scored.append((lex_score, r))
 
@@ -92,8 +102,7 @@ class CrossEncoderReranker(BaseReranker):
                     chunk=orig.chunk,
                     score=float(score),
                     rank=rank,
-                    retriever_type="fallback_reranked"
+                    retriever_type="fallback_lexical"
                 )
             )
         return reranked
-

@@ -1,6 +1,7 @@
-"""LLM generation module supporting deterministic mock, Gemini, and local LLM backends with prompt injection defense."""
+"""LLM generation module supporting Gemini, local HuggingFace transformers, and offline mock with prompt injection defense."""
 
 from __future__ import annotations
+import logging
 import os
 import re
 import time
@@ -9,6 +10,7 @@ from typing import List, Optional
 from src.generation.base import BaseGenerator
 from src.ingestion.models import GenerationResponse, GroundedCitation, RetrievalResult
 
+logger = logging.getLogger("generator")
 
 SYSTEM_PROMPT_TEMPLATE = """You are a strictly grounded AI retrieval assistant.
 Answer the user's question relying EXCLUSIVELY on the provided context below.
@@ -28,23 +30,59 @@ Answer:"""
 
 
 class LLMGenerator(BaseGenerator):
-    """Generator supporting deterministic mock mode, Google Gemini API, and local transformers."""
+    """Generator supporting Google Gemini, local HuggingFace transformers, and offline mock."""
 
     def __init__(
         self,
-        provider: str = "mock",
+        provider: Optional[str] = None,
         model_name: Optional[str] = None,
         temperature: float = 0.0,
         abstention_threshold: float = 0.15,
-        abstention_message: str = "I do not have sufficient information in the provided context to answer this question."
+        abstention_message: str = "I do not have sufficient information in the provided context to answer this question.",
+        device: str = "cpu"
     ):
+        # Determine provider from argument or environment
+        chosen_provider = provider or os.getenv("LLM_PROVIDER")
+        if not chosen_provider:
+            # Default to gemini if api key present, else local if transformers installed, else mock
+            if os.getenv("GEMINI_API_KEY"):
+                chosen_provider = "gemini"
+            else:
+                chosen_provider = "local"
+
         super().__init__(
-            provider=provider,
+            provider=chosen_provider,
             temperature=temperature,
             abstention_threshold=abstention_threshold,
             abstention_message=abstention_message
         )
-        self.model_name = model_name or ("gemini-1.5-flash" if provider == "gemini" else "grounded-extractive-v1")
+
+        self.device = device
+        if model_name:
+            self.model_name = model_name
+        elif self.provider == "gemini":
+            self.model_name = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        elif self.provider in {"local", "huggingface"}:
+            self.model_name = os.getenv("LOCAL_LLM_MODEL", "google/flan-t5-base")
+        else:
+            self.model_name = "grounded-extractive-mock"
+
+        self._local_pipeline = None
+
+    def _ensure_local_pipeline(self):
+        """Lazy-load local transformer pipeline."""
+        if self._local_pipeline is None:
+            try:
+                from transformers import pipeline
+                logger.info(f"Loading local generation model: {self.model_name}")
+                self._local_pipeline = pipeline(
+                    "text2text-generation",
+                    model=self.model_name,
+                    device=self.device
+                )
+            except Exception as e:
+                logger.warning(f"Could not load local transformer pipeline ({e}). Falling back to extractive mock.")
+                self.provider = "mock"
 
     def generate(
         self,
@@ -72,12 +110,54 @@ class LLMGenerator(BaseGenerator):
 
         if self.provider == "gemini":
             response = self._generate_gemini(query, context, citations, retrieved_chunks, retrieval_strategy)
+        elif self.provider in {"local", "huggingface"}:
+            response = self._generate_local(query, context, citations, retrieved_chunks, retrieval_strategy)
         else:
             response = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         response.latency_ms = latency_ms
         return response
+
+    def _generate_local(
+        self,
+        query: str,
+        context: str,
+        citations: List[GroundedCitation],
+        retrieved_chunks: List[RetrievalResult],
+        retrieval_strategy: str
+    ) -> GenerationResponse:
+        """Run local HuggingFace neural generation."""
+        self._ensure_local_pipeline()
+        if self._local_pipeline is None:
+            return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
+
+        prompt = f"Context: {context[:1500]}\nQuestion: {query}\nAnswer based on context:"
+        try:
+            outputs = self._local_pipeline(
+                prompt,
+                max_new_tokens=150,
+                temperature=self.temperature or 0.1,
+                do_sample=False
+            )
+            raw_answer = outputs[0]["generated_text"].strip()
+            
+            # Grounding and citation appendage
+            source_tag = f" [Source 1: {citations[0].source}]" if citations else ""
+            formatted = f"{raw_answer}{source_tag}"
+            
+            return GenerationResponse(
+                query=query,
+                answer=formatted,
+                citations=citations[:1],
+                retrieved_chunks=retrieved_chunks,
+                is_abstained=False,
+                retrieval_strategy=retrieval_strategy,
+                model_name=self.model_name
+            )
+        except Exception as e:
+            logger.warning(f"Local inference failed ({e}), using extractive fallback.")
+            return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
     def _generate_mock_extractive(
         self,
@@ -90,16 +170,11 @@ class LLMGenerator(BaseGenerator):
         """Deterministic extractive generation for testing and offline evaluation."""
         q_tokens = set(re.findall(r'\b\w+\b', query.lower()))
         stopwords = {"what", "is", "the", "how", "to", "does", "in", "for", "a", "an", "of", "with", "are", "and"}
-        meaningful_tokens = q_tokens - stopwords
+        meaningful_tokens = q_tokens - stopwords or q_tokens
 
-        if not meaningful_tokens:
-            meaningful_tokens = q_tokens
-
-        # Check evidence in top chunk
         top_chunk = retrieved_chunks[0].chunk
         chunk_sentences = re.split(r'(?<=[.!?])\s+', top_chunk.text)
         
-        # Rank sentences by query overlap
         best_sentence = ""
         max_overlap = 0
 
@@ -113,7 +188,6 @@ class LLMGenerator(BaseGenerator):
                 max_overlap = overlap
                 best_sentence = s_clean
 
-        # Abstain if overlap is negligible
         if max_overlap == 0:
             return GenerationResponse(
                 query=query,
@@ -147,10 +221,9 @@ class LLMGenerator(BaseGenerator):
         retrieved_chunks: List[RetrievalResult],
         retrieval_strategy: str
     ) -> GenerationResponse:
-        """Query Google Gemini API if configured."""
+        """Query Google Gemini API with configured key."""
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            # Fall back to extractive generation if key is not configured
             return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
         try:
@@ -175,8 +248,7 @@ class LLMGenerator(BaseGenerator):
                     retrieval_strategy=retrieval_strategy,
                     model_name=self.model_name
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Gemini API request failed ({e}), falling back to extractive.")
 
         return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
-

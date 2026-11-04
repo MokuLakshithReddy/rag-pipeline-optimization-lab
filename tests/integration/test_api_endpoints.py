@@ -61,6 +61,7 @@ def test_api_indexing_and_querying():
     assert "Docker" in data["answer"]
     assert len(data["retrieved_chunks"]) > 0
     assert data["is_abstained"] is False
+    assert q_resp.headers["X-Request-ID"] == data["request_id"]
 
 
 def test_api_experiments_endpoint():

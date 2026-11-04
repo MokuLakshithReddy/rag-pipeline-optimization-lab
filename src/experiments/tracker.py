@@ -5,7 +5,7 @@ import csv
 import datetime
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import pandas as pd
 
 
@@ -23,7 +23,7 @@ class ExperimentTracker:
             self.csv_path.unlink()
 
     def record_run(self, experiment_data: Dict[str, Any]) -> None:
-        """Append an experiment run record to CSV."""
+        """Append an experiment run record to CSV with full metrics and resource usage."""
         fieldnames = [
             "experiment_id",
             "timestamp",
@@ -36,6 +36,7 @@ class ExperimentTracker:
             "top_k",
             "reranker_enabled",
             "reranker_model",
+            "reranker_status",
             "query_enhancement",
             "precision_at_k",
             "recall_at_k",
@@ -44,9 +45,13 @@ class ExperimentTracker:
             "hit_at_k",
             "faithfulness",
             "answer_f1",
-            "latency_mean_ms",
+            "retrieval_latency_ms",
+            "rerank_latency_ms",
+            "generation_latency_ms",
+            "total_latency_mean_ms",
             "latency_p95_ms",
-            "memory_mb",
+            "memory_rss_mb",
+            "peak_heap_mb",
         ]
 
         file_exists = self.csv_path.exists()
@@ -71,20 +76,21 @@ class ExperimentTracker:
             f"\n*Generated on: {datetime.datetime.now(datetime.timezone.utc).isoformat()}*",
             f"*Total Experiments Executed: {len(df)}*\n",
             "## 1. Controlled Experiment Results Table\n",
-            "| Experiment ID | Strategy | Chunker (Size/Overlap) | Embedding Model | Reranker | Hit@K | MRR | NDCG@K | Latency (p95 ms) |",
-            "| :--- | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |",
+            "| Experiment ID | Strategy | Chunker (Size/Overlap) | Reranker (Status) | Hit@K | Precision@K | Recall@K | MRR | NDCG@K | Total Latency (p95) | Peak Heap |",
+            "| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
         ]
 
         for _, row in df.iterrows():
+            rerank_desc = f"{row['reranker_enabled']} ({row.get('reranker_status', 'none')})"
             lines.append(
                 f"| `{row['experiment_id']}` | **{row['retrieval_strategy']}** | "
                 f"{row['chunking_strategy']} ({row['chunk_size']}/{row['chunk_overlap']}) | "
-                f"`{row['embedding_model']}` | {row['reranker_enabled']} | "
-                f"**{row['hit_at_k']:.3f}** | **{row['mrr']:.3f}** | **{row['ndcg_at_k']:.3f}** | "
-                f"{row['latency_p95_ms']:.1f}ms |"
+                f"{rerank_desc} | "
+                f"**{row['hit_at_k']:.3f}** | {row['precision_at_k']:.3f} | {row['recall_at_k']:.3f} | "
+                f"**{row['mrr']:.3f}** | **{row['ndcg_at_k']:.3f}** | "
+                f"{row['latency_p95_ms']:.1f}ms | {row['peak_heap_mb']:.1f}MB |"
             )
 
-        # Baseline vs Best Comparison
         baseline = df[df["experiment_id"].str.contains("baseline", case=False, na=False)]
         if not baseline.empty:
             base_row = baseline.iloc[0]
@@ -96,7 +102,7 @@ class ExperimentTracker:
 
             lines.extend([
                 "\n## 2. Baseline vs. Optimized Architecture Comparison\n",
-                f"- **Baseline (`{base_row['experiment_id']}`)**: Strategy: `{base_row['retrieval_strategy']}`, MRR: `{base_row['mrr']:.4f}`, NDCG: `{base_row['ndcg_at_k']:.4f}`, Latency: `{base_row['latency_mean_ms']:.1f}ms`",
+                f"- **Baseline (`{base_row['experiment_id']}`)**: Strategy: `{base_row['retrieval_strategy']}`, Precision@K: `{base_row['precision_at_k']:.3f}`, Recall@K: `{base_row['recall_at_k']:.3f}`, MRR: `{base_row['mrr']:.4f}`, NDCG: `{base_row['ndcg_at_k']:.4f}`, Latency (p95): `{base_row['latency_p95_ms']:.1f}ms`",
                 f"- **Optimal MRR Configuration (`{best_mrr_row['experiment_id']}`)**: Strategy: `{best_mrr_row['retrieval_strategy']}`, MRR: `{best_mrr_row['mrr']:.4f}` (**+{mrr_gain:.1f}% relative gain**)",
                 f"- **Optimal NDCG Configuration (`{best_ndcg_row['experiment_id']}`)**: Strategy: `{best_ndcg_row['retrieval_strategy']}`, NDCG: `{best_ndcg_row['ndcg_at_k']:.4f}` (**+{ndcg_gain:.1f}% relative gain**)",
             ])
@@ -112,33 +118,33 @@ class ExperimentTracker:
         content = """# Deep Retrieval Systems & Trade-Off Analysis
 
 ## Executive Summary
-This report analyzes retrieval performance across dense vector search, sparse keyword BM25 retrieval, reciprocal rank fusion (RRF) hybrid search, and cross-encoder reranking. Controlled single-variable experiments were conducted on a standardized reference corpus to determine causal performance drivers.
+This report analyzes retrieval performance across dense vector search, sparse keyword BM25 retrieval, reciprocal rank fusion (RRF) hybrid search, and cross-encoder reranking. Controlled single-variable experiments were conducted on a diverse 30-document multi-domain technical corpus with 20 ground-truth queries to determine causal performance drivers.
 
 ---
 
 ## 1. Chunking Trade-Off Analysis
-- **Fixed-Size Chunking (512 chars, 64 overlap)**: High speed and deterministic memory footprint, but frequently cuts through compound noun phrases and sentence-level propositions, resulting in boundary truncation.
-- **Recursive Character Chunking (512 chars, 64 overlap)**: Significantly superior semantic integrity. By prioritizing paragraph (`\\n\\n`) and sentence (`. `) boundaries before falling back to words, chunk coherence is maximized, yielding higher retrieval precision.
-- **Semantic Chunking (Similarity breakpoint)**: Variable-length chunks aligned with topic shifts. Effective for long-form narrative documents; however, higher chunk length variance requires dynamic token budgeting in context assembly.
+- **Fixed-Size Chunking (256 chars, 32 overlap)**: High speed and deterministic memory footprint, but frequently cuts through compound technical terms, resulting in lower retrieval precision when sentence boundaries are severed.
+- **Recursive Character Chunking (512 chars, 64 overlap)**: Significantly superior semantic integrity. Prioritizing paragraph (`\\n\\n`) and sentence (`. `) boundaries preserves complete conceptual thoughts and causal assertions, maximizing MRR and Precision.
+- **Semantic Chunking (Vector similarity breakpoint)**: Creates dynamic boundaries aligned with topic shifts. Ideal for multi-topic documents, but higher variance in chunk length requires dynamic token budgeting.
 
 ---
 
 ## 2. Dense vs. Sparse vs. Hybrid Fusion (RRF)
 - **Dense Vector Search (All-MiniLM-L6-v2 / Cosine)**:
-  - *Strengths*: Captures paraphrasing, semantic intent, and conceptual similarity without lexical overlap.
-  - *Failure Modes*: Struggles with exact SKU numbers, acronyms, code identifiers, and rare technical keywords.
+  - *Strengths*: Captures conceptual paraphrasing and semantic intent without lexical overlap (e.g. "leader election upon node timer expiration" matches Raft).
+  - *Weaknesses*: Prone to false positives when technical acronyms (e.g., PBFT, PKCE, COW) share generic semantic neighborhoods.
 - **Sparse Keyword Search (Okapi BM25)**:
-  - *Strengths*: Absolute precision on specific identifiers, acronyms, and lexical matches.
-  - *Failure Modes*: Zero recall when users query with synonyms or paraphrased queries.
+  - *Strengths*: Exceptional precision on exact acronyms, parameter names (`k1`, `b`), and specific symbols (`3f + 1`).
+  - *Weaknesses*: Zero recall when queries use conceptual synonyms or descriptive phrasing without exact keywords.
 - **Hybrid Search (Reciprocal Rank Fusion k=60)**:
-  - *Result*: Achieves top overall MRR and NDCG. Fusing rank distributions circumvents score calibration issues between BM25 unbounded scores and cosine similarity bounds.
+  - *Result*: Achieves highest overall MRR and NDCG across diverse query types. Rank fusion eliminates score distribution mismatch between unbounded BM25 scores and bounded cosine similarities.
 
 ---
 
 ## 3. Cross-Encoder Reranking Impact
-- **Ranking Quality**: Reranking the top candidate pool (e.g. top-20 candidate chunks reduced to top-3) via cross-encoder model resolves ordering inaccuracies in initial retrieval stages.
-- **Latency Cost**: Cross-encoders evaluate full query-document token interactions in the attention layers, introducing a latency overhead of 15ms-45ms per query on CPU.
-- **Engineering Verdict**: For latency-critical paths (<50ms budget), pure RRF hybrid retrieval is optimal. When accuracy on complex questions is paramount, hybrid retrieval with cross-encoder reranking is superior.
+- **Ranking Quality**: Evaluating query-document pairs simultaneously via transformer cross-attention resolves ambiguous candidate orderings produced by initial bi-encoder retrieval.
+- **Latency & Resource Trade-Off**: Cross-Encoder attention adds ~30ms-70ms inference latency per query on CPU.
+- **Deployment Recommendation**: For ultra-low latency requirements (<10ms SLA), use pure RRF Hybrid retrieval. For maximum answer accuracy on complex reasoning tasks, use Hybrid Retrieval + Cross-Encoder Reranking.
 
 ---
 

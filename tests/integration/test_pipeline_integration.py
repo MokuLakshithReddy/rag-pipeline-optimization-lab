@@ -6,7 +6,7 @@ from src.experiments.runner import load_benchmark_data
 
 
 def test_full_pipeline_ingest_index_query():
-    state = PipelineState()
+    state = PipelineState(auto_restore=False)
 
     doc1 = b"FastAPI is a modern, fast web framework for building APIs with Python 3.8+."
     doc2 = b"Streamlit turns data scripts into shareable web apps in minutes with pure Python."
@@ -39,7 +39,7 @@ def test_full_pipeline_ingest_index_query():
 
 def test_regression_benchmark_evaluation():
     data = load_benchmark_data("data/benchmarks/rag_benchmark.json")
-    state = PipelineState()
+    state = PipelineState(auto_restore=False)
 
     for item in data["corpus"]:
         state.ingest_bytes(item["text"].encode("utf-8"), filename=item["source"])
@@ -57,5 +57,5 @@ def test_regression_benchmark_evaluation():
     assert metrics["hit_at_k"] >= 0.85
     assert metrics["mrr"] >= 0.80
     assert metrics["ndcg_at_k"] >= 0.80
-    assert metrics["latency_mean_ms"] < 2500.0
+    assert metrics["total_latency_mean_ms"] < 2500.0
 
