@@ -107,22 +107,24 @@ To scientifically isolate how much of the F1 improvement originates from prompt 
 ### C. Multi-Scale Corpus, Concurrency & Throughput Stress Testing
 To stress-test performance beyond the baseline 30-document development set, the pipeline was benchmarked across multi-scale corpus tiers (up to 500 documents / **1,503 chunks**) and simulated concurrent client workloads (1 to 20 concurrent threads):
 
-#### Corpus Scaling & Isolated Memory Footprint
-*Note: Embedding model weights are pre-warmed prior to tier profiling to cleanly isolate index overhead from model initialization.*
+#### Corpus Scaling & Subprocess-Isolated Memory Footprint
+*Note: Each tier is evaluated in a dedicated fresh subprocess. Baseline RSS is recorded after document/chunk construction with embedding cache disabled (`enable_cache=False`) to measure genuine index data structure overhead.*
 
 | Corpus Tier | Chunks Indexed | Indexing Time | Baseline RSS | Post-Index RSS | Index Memory Delta | Query Latency (Mean) | Latency (p95) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Small (30 docs)** | **93 chunks** | 2.98s | 548.5 MB | 625.5 MB | **+77.0 MB** | 31.49 ms | 45.0 ms |
-| **Medium (100 docs)** | **303 chunks** | 5.61s | 604.1 MB | 584.6 MB | **+0.0 MB** | 1.66 ms | 2.05 ms |
-| **Large (500 docs)** | **1,503 chunks** | 12.25s | 584.6 MB | 598.4 MB | **+13.7 MB** | **7.82 ms** | **10.73 ms** |
+| **Small (30 docs)** | **93 chunks** | 1.43s | 544.9 MB | 624.1 MB | **+79.2 MB** | 13.95 ms | 24.66 ms |
+| **Medium (100 docs)** | **303 chunks** | 3.64s | 543.6 MB | 595.1 MB | **+51.5 MB** | 15.46 ms | 18.07 ms |
+| **Large (500 docs)** | **1,503 chunks** | 15.54s | 544.1 MB | 617.6 MB | **+73.5 MB** | **18.37 ms** | **22.85 ms** |
 
 #### In-Process Concurrency & Sustained Throughput (Evaluated on 500-Doc / 1,503-Chunk Tier)
-| Concurrency Level | Warm-Cache QPS | Cold-Cache QPS | Warm Latency (Mean) | Warm Latency (p95) | Cold Latency (p95) | Peak RSS | Memory Delta |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1 worker** | **117.5 req/s** | **19.2 req/s** | 8.42 ms | **11.23 ms** | 71.56 ms | 601.3 MB | +2.8 MB |
-| **5 workers** | **97.9 req/s** | **81.5 req/s** | 50.21 ms | **67.86 ms** | 76.94 ms | 601.4 MB | +0.1 MB |
-| **10 workers** | **96.9 req/s** | **80.7 req/s** | 98.51 ms | **134.30 ms** | 154.20 ms | 601.6 MB | +0.2 MB |
-| **20 workers** | **92.2 req/s** | **80.0 req/s** | 197.87 ms | **302.44 ms** | 310.86 ms | 602.8 MB | +1.2 MB |
+| Concurrency Level | Warm-Cache QPS | Cold-Cache QPS | Warm Latency (Mean) | Warm Latency (p95) | Cold Latency (p95) | Peak RSS |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1 worker** | **205.8 req/s** | **44.3 req/s** | 4.83 ms | **15.25 ms** | 26.70 ms | 614.6 MB |
+| **5 workers** | **163.5 req/s** | **205.8 req/s** | 29.82 ms | **50.27 ms** | 38.47 ms | 615.6 MB |
+| **10 workers** | **127.3 req/s** | **129.8 req/s** | 75.29 ms | **189.02 ms** | 107.31 ms | 616.5 MB |
+| **20 workers** | **133.0 req/s** | **106.9 req/s** | 134.77 ms | **203.49 ms** | 312.14 ms | 617.8 MB |
+
+- **Throughput Qualification**: The reported QPS measures **in-process retriever throughput** (warm-cache retrieval vs. cold-cache neural query embedding on CPU); full HTTP requests through the FastAPI REST gateway include ASGI framework parsing and JSON serialization.
 
 - **Throughput Qualification**: The reported QPS measures **in-process retriever throughput** (warm-cache retrieval vs. cold-cache neural query embedding on CPU); full HTTP requests through the FastAPI REST gateway include ASGI framework parsing and JSON serialization.
 

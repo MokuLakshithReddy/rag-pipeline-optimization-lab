@@ -2,18 +2,23 @@
 
 Evaluates RAG pipeline scaling across:
 1. Multi-scale corpus tiers:
-   - Small: 30 documents (~100 chunks)
-   - Medium: 100 documents (~350 chunks)
-   - Large / Stress: 500 documents (~1,700 chunks)
-2. Concurrency stress testing:
+   - Small: 30 documents (~93 chunks)
+   - Medium: 100 documents (~303 chunks)
+   - Large / Stress: 500 documents (~1,503 chunks)
+2. Subprocess-isolated Resident Set Size (RSS) memory profiling via psutil:
+   - Evaluates each tier in a dedicated fresh subprocess.
+   - Measures memory baseline AFTER document/chunk construction.
+   - Disables embedding vector cache (enable_cache=False) to avoid duplicate dict retention.
+   - Reports genuine index memory delta (post_index_rss - baseline_rss).
+3. Concurrency stress testing:
    - 1, 5, 10, 20 concurrent workers
    - In-Process Warm-Cache Retrieval Throughput (QPS)
    - Cold-Cache Neural Embedding & Retrieval Throughput (QPS)
-3. Isolated Resident Set Size (RSS) memory profiling via psutil.
 4. Generates reports/scalability_benchmark_report.json and reports/scalability_benchmark_report.md.
 """
 
 from __future__ import annotations
+import argparse
 import concurrent.futures
 import datetime
 import gc
@@ -21,6 +26,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Tuple
@@ -156,44 +162,47 @@ def generate_scaled_corpus(target_doc_count: int) -> List[Document]:
     return documents
 
 
-def evaluate_corpus_size_tier(
-    doc_count: int,
-    queries: List[str],
-    shared_embedder: Any
-) -> Dict[str, Any]:
-    """Index and benchmark a specific corpus size tier with clean memory isolation."""
-    logger.info(f"=== Evaluating Corpus Size Tier: {doc_count} Documents ===")
-    
-    # 1. Clean Garbage Collection & Pre-Index RSS Baseline
-    gc.collect()
-    baseline_rss = get_current_rss_mb()
-    
-    # 2. Generate & Chunk Corpus
-    t_start = time.perf_counter()
+def evaluate_single_tier_isolated(doc_count: int) -> Dict[str, Any]:
+    """Execute evaluation of a single corpus tier inside an isolated subprocess."""
+    base_path = Path("data/benchmarks/rag_benchmark.json")
+    with open(base_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    queries = [q["query"] for q in data["benchmark_queries"]]
+
+    # 1. Instantiate embedder with embedding cache disabled to prevent dictionary retention
+    embedder = get_embedder(model_name="all-MiniLM-L6-v2", enable_cache=False)
+
+    # 2. Generate and chunk corpus
+    t_chunk_start = time.perf_counter()
     docs = generate_scaled_corpus(doc_count)
     chunker = RecursiveCharacterChunker(chunk_size=512, chunk_overlap=64)
     chunks = chunker.chunk_documents(docs)
-    chunk_time_s = time.perf_counter() - t_start
+    chunk_time_s = time.perf_counter() - t_chunk_start
 
-    # 3. Build Sparse BM25 Index
+    # 3. Clean garbage collection & capture BASELINE RSS AFTER document/chunk construction
+    gc.collect()
+    baseline_rss_mb = get_current_rss_mb()
+
+    # 4. Build Sparse BM25 Index
     t_sparse_start = time.perf_counter()
     sparse = SparseRetriever()
     sparse.index_chunks(chunks)
     sparse_index_time_s = time.perf_counter() - t_sparse_start
 
-    # 4. Build Dense Vector Index using Shared Pre-Warmed Embedder
+    # 5. Build Dense Vector Index
     t_dense_start = time.perf_counter()
-    dense = DenseRetriever(embedder=shared_embedder)
+    dense = DenseRetriever(embedder=embedder)
     dense.index_chunks(chunks)
     dense_index_time_s = time.perf_counter() - t_dense_start
 
-    post_index_rss = get_current_rss_mb()
-    index_memory_delta_mb = max(0.0, post_index_rss - baseline_rss)
+    # 6. Capture POST-INDEX RSS and calculate TRUE index memory delta
+    gc.collect()
+    post_index_rss_mb = get_current_rss_mb()
+    index_memory_delta_mb = round(post_index_rss_mb - baseline_rss_mb, 2)
 
-    # 5. Measure Single-Query Latencies for Hybrid RRF
+    # 7. Single-query latency measurement for Hybrid RRF
     hybrid = HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, fusion_method="rrf", rrf_k=60)
-    
-    # Warmup
     for q in queries[:2]:
         _ = hybrid.retrieve(q, top_k=5)
 
@@ -203,21 +212,21 @@ def evaluate_corpus_size_tier(
         _ = hybrid.retrieve(q, top_k=5)
         latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
-    return {
+    result = {
         "doc_count": doc_count,
         "total_chunks": len(chunks),
         "chunking_time_s": round(chunk_time_s, 2),
         "sparse_index_time_s": round(sparse_index_time_s, 3),
         "dense_index_time_s": round(dense_index_time_s, 2),
         "total_index_time_s": round(sparse_index_time_s + dense_index_time_s, 2),
-        "baseline_rss_mb": round(baseline_rss, 1),
-        "post_index_rss_mb": round(post_index_rss, 1),
-        "index_memory_delta_mb": round(index_memory_delta_mb, 1),
+        "baseline_rss_mb": round(baseline_rss_mb, 1),
+        "post_index_rss_mb": round(post_index_rss_mb, 1),
+        "index_memory_delta_mb": index_memory_delta_mb,
         "query_latency_mean_ms": round(float(np.mean(latencies_ms)), 2),
         "query_latency_p50_ms": round(float(np.percentile(latencies_ms, 50)), 2),
-        "query_latency_p95_ms": round(float(np.percentile(latencies_ms, 95)), 2),
-        "pipeline": hybrid
+        "query_latency_p95_ms": round(float(np.percentile(latencies_ms, 95)), 2)
     }
+    return result
 
 
 def evaluate_concurrency_and_throughput(
@@ -283,7 +292,7 @@ def evaluate_concurrency_and_throughput(
             "cold_latency_mean_ms": round(float(np.mean(cold_latencies_ms)), 2),
             "cold_latency_p95_ms": round(float(np.percentile(cold_latencies_ms, 95)), 2),
             "peak_rss_mb": round(rss_after, 1),
-            "memory_delta_mb": round(max(0.0, rss_after - rss_before), 1)
+            "memory_delta_mb": round(rss_after - rss_before, 1)
         })
 
     return results
@@ -294,7 +303,7 @@ def run_scalability_benchmark(
     corpus_tiers: List[int] = [30, 100, 500],
     concurrency_levels: List[int] = [1, 5, 10, 20]
 ) -> Dict[str, Any]:
-    """Execute end-to-end scalability, throughput, and concurrency benchmark suite."""
+    """Execute end-to-end scalability benchmark orchestrating isolated subprocesses per tier."""
     reports = Path(reports_dir)
     reports.mkdir(parents=True, exist_ok=True)
 
@@ -304,24 +313,40 @@ def run_scalability_benchmark(
 
     queries = [q["query"] for q in data["benchmark_queries"]]
 
-    # Pre-warm embedding model to isolate model weights from index memory delta
-    logger.info("Pre-warming embedding model to isolate neural weights from index memory profiling...")
-    shared_embedder = get_embedder(model_name="all-MiniLM-L6-v2")
-    _ = shared_embedder.embed_query("warmup initialization query")
-    gc.collect()
-
-    # 1. Benchmark Corpus Size Scaling
+    # 1. Benchmark Each Corpus Size Tier in an Isolated Subprocess
     tier_results = []
-    largest_pipeline = None
-
     for doc_count in corpus_tiers:
-        tier_data = evaluate_corpus_size_tier(doc_count, queries, shared_embedder)
-        largest_pipeline = tier_data.pop("pipeline")
+        logger.info(f"Spawning isolated subprocess for Corpus Tier: {doc_count} Documents...")
+        cmd = [sys.executable, str(Path(__file__).resolve()), "--single-tier", str(doc_count)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        tier_data = None
+        for line in proc.stdout.splitlines():
+            if line.startswith("__TIER_JSON__"):
+                tier_data = json.loads(line.replace("__TIER_JSON__", "").strip())
+                break
+        if not tier_data:
+            raise RuntimeError(f"Subprocess for tier {doc_count} failed to return metrics. Stderr: {proc.stderr}")
         tier_results.append(tier_data)
+        logger.info(f"Tier {doc_count} completed: chunks={tier_data['total_chunks']}, delta_rss={tier_data['index_memory_delta_mb']} MB")
 
-    # 2. Benchmark Concurrency and Throughput on largest tested corpus
+    # 2. Build pipeline for largest tier to evaluate concurrency and throughput
+    largest_doc_count = max(corpus_tiers)
+    logger.info(f"Preparing pipeline for {largest_doc_count}-doc concurrency stress test...")
+    embedder = get_embedder(model_name="all-MiniLM-L6-v2", enable_cache=True)
+    docs = generate_scaled_corpus(largest_doc_count)
+    chunker = RecursiveCharacterChunker(chunk_size=512, chunk_overlap=64)
+    chunks = chunker.chunk_documents(docs)
+
+    sparse = SparseRetriever()
+    sparse.index_chunks(chunks)
+
+    dense = DenseRetriever(embedder=embedder)
+    dense.index_chunks(chunks)
+
+    hybrid = HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, fusion_method="rrf", rrf_k=60)
+
     concurrency_results = evaluate_concurrency_and_throughput(
-        hybrid_pipeline=largest_pipeline,
+        hybrid_pipeline=hybrid,
         queries=queries,
         concurrency_levels=concurrency_levels,
         requests_per_test=100
@@ -338,6 +363,17 @@ def run_scalability_benchmark(
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary_data, f, indent=2)
 
+    # Dynamic extraction of actual measured throughput values to prevent outdated claims
+    warm_qps_min = min(c["warm_cache_throughput_qps"] for c in concurrency_results)
+    warm_qps_max = max(c["warm_cache_throughput_qps"] for c in concurrency_results)
+    warm_p95_min = min(c["warm_latency_p95_ms"] for c in concurrency_results)
+    warm_p95_max = max(c["warm_latency_p95_ms"] for c in concurrency_results)
+
+    cold_qps_min = min(c["cold_cache_throughput_qps"] for c in concurrency_results)
+    cold_qps_max = max(c["cold_cache_throughput_qps"] for c in concurrency_results)
+    cold_p95_min = min(c["cold_latency_p95_ms"] for c in concurrency_results)
+    cold_p95_max = max(c["cold_latency_p95_ms"] for c in concurrency_results)
+
     # Save Markdown Report
     md_path = reports / "scalability_benchmark_report.md"
     lines = [
@@ -346,7 +382,7 @@ def run_scalability_benchmark(
         "- **Profiling Tooling**: `psutil` Process Resident Set Size (RSS), `concurrent.futures.ThreadPoolExecutor`",
         f"- **Tested Corpus Tiers**: {corpus_tiers} documents ({tier_results[-1]['total_chunks']} total chunks on largest tier)",
         f"- **Tested Concurrency**: {concurrency_levels} concurrent workers\n",
-        "## 1. Corpus Scaling & Isolated Memory Footprint Table\n",
+        "## 1. Corpus Scaling & Subprocess-Isolated Memory Footprint Table\n",
         "| Corpus Size | Total Chunks | Indexing Time (s) | Baseline RSS | Post-Index RSS | Index Memory Delta | Query Latency (Mean) | Latency (p95) |",
         "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
     ]
@@ -369,16 +405,16 @@ def run_scalability_benchmark(
         lines.append(
             f"| **{c['concurrency_level']} workers** | **{c['warm_cache_throughput_qps']} req/s** | "
             f"**{c['cold_cache_throughput_qps']} req/s** | {c['warm_latency_mean_ms']} ms | "
-            f"**{c['warm_latency_p95_ms']} ms** | {c['cold_latency_p95_ms']} ms | {c['peak_rss_mb']} MB | +{c['memory_delta_mb']} MB |"
+            f"**{c['warm_latency_p95_ms']} ms** | {c['cold_latency_p95_ms']} ms | {c['peak_rss_mb']} MB | {c['memory_delta_mb']:+.1f} MB |"
         )
 
     lines.extend([
         "\n## 3. Engineering Analysis & Production Observations",
-        "1. **Corpus Volume & Chunk Alignment**: Each technical document is structured into multiple substantive sections (1,200–1,600 chars), producing **3 to 4 chunks per document**. 500 documents yield **1,700+ discrete chunks**, establishing genuine multi-chunk retrieval at scale.",
-        "2. **Memory Isolation via Pre-Warmed Embedding Weights**: The embedding model is pre-warmed prior to tier profiling, ensuring that the reported Index Memory Delta isolates pure index overhead (chunks, BM25 inverted index, and FAISS vectors) rather than model checkpoint initialization.",
-        "3. **Throughput Framing (Warm-Cache vs Cold-Cache)**:",
-        "   - **In-Process Warm-Cache Retrieval**: When query embeddings are cached, in-process hybrid search sustains **~950–1,100 queries per second** with sub-5ms latency across 20 concurrent threads.",
-        "   - **Cold-Cache Neural Inference**: For unseen queries requiring live transformer forward passes on CPU (`all-MiniLM-L6-v2`), sustained throughput reaches **~40–120 queries per second** with mean latencies of ~10–25ms.",
+        f"1. **Corpus Volume & Chunk Alignment**: Each technical document is structured into multiple substantive sections (1,200–1,600 chars), producing **3 to 4 chunks per document**. 500 documents yield **{tier_results[-1]['total_chunks']} discrete chunks**, establishing genuine multi-chunk retrieval at scale.",
+        "2. **Subprocess-Isolated Memory Overhead**: Each corpus tier is evaluated in a dedicated fresh subprocess. Baseline RSS is recorded *after* document and chunk construction, and vector caching is disabled (`enable_cache=False`). The reported Index Memory Delta isolates pure index overhead (sparse BM25 inverted index + dense FAISS vector matrix) without cross-tier memory reuse or cache retention.",
+        "3. **Empirical Throughput Scaling (Warm-Cache vs Cold-Cache)**:",
+        f"   - **In-Process Warm-Cache Retrieval**: When query embeddings are cached, in-process hybrid search on the 500-doc ({tier_results[-1]['total_chunks']}-chunk) tier sustains **{warm_qps_min:.1f} to {warm_qps_max:.1f} queries per second**, with p95 latencies ranging from {warm_p95_min:.1f} ms (1 worker) to {warm_p95_max:.1f} ms under high concurrency (20 workers).",
+        f"   - **Cold-Cache Neural Inference**: For unseen queries requiring live transformer forward passes on CPU (`all-MiniLM-L6-v2`), sustained throughput reaches **{cold_qps_min:.1f} to {cold_qps_max:.1f} queries per second** with p95 latencies between {cold_p95_min:.1f} ms and {cold_p95_max:.1f} ms.",
         "   - **Scope Qualification**: This benchmark measures in-process retriever throughput; full end-to-end FastAPI HTTP requests will include ASGI framework overhead and network serialization.",
         "4. **Controlled Laboratory Scope**: These results establish rigorous empirical bounds for medium-scale retrieval. Enterprise deployments scaling to millions of documents require distributed sharding (e.g. Qdrant/Milvus cluster) and GPU-accelerated batch reranking."
     ])
@@ -389,12 +425,17 @@ def run_scalability_benchmark(
 
 
 if __name__ == "__main__":
-    import argparse
     parser = argparse.ArgumentParser(description="Run RAG pipeline scalability and concurrency benchmark.")
     parser.add_argument("--reports-dir", default="reports")
     parser.add_argument("--corpus-tiers", nargs="+", type=int, default=[30, 100, 500])
     parser.add_argument("--concurrency-levels", nargs="+", type=int, default=[1, 5, 10, 20])
+    parser.add_argument("--single-tier", type=int, default=None, help="Execute single isolated tier subprocess")
     args = parser.parse_args()
+
+    if args.single_tier is not None:
+        tier_metrics = evaluate_single_tier_isolated(args.single_tier)
+        print(f"__TIER_JSON__{json.dumps(tier_metrics)}")
+        sys.exit(0)
 
     run_scalability_benchmark(
         reports_dir=args.reports_dir,

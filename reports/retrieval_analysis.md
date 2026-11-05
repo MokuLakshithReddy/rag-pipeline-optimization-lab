@@ -48,7 +48,7 @@ Additionally, end-to-end neural LLM generation was benchmarked using an active l
 - **Controlled Benchmark Qualification**: Metrics reported on the development set establish rigorous experimental evidence rather than unconstrained production-scale proof.
 - **Production Scalability & Stress Benchmark**: To evaluate scaling behavior beyond the development set, stress tests were executed across multi-scale corpus tiers (up to 500 documents / **1,503 chunks**) and simulated concurrent client workloads (1 to 20 concurrent threads):
   - In-memory dense and sparse indices scale sub-linearly with $O(\log N)$ query latencies maintaining sub-15ms execution on 500 documents.
-  - In-process warm-cache retrieval throughput sustains **~95–118 queries per second** with sub-12ms p95 latency on the 500-document tier, while cold-cache neural embedding on CPU reaches **~80 queries per second**.
+  - In-process warm-cache retrieval throughput sustains **~127–206 queries per second** with p95 latencies ranging from 15.2 ms (1 worker) to 203.5 ms under high concurrency (20 workers) on the 500-document tier, while cold-cache neural embedding on CPU reaches **~44–206 queries per second**.
   - See [reports/scalability_benchmark_report.md](scalability_benchmark_report.md) for full concurrency and memory scaling data.
 
 ---
