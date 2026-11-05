@@ -54,3 +54,18 @@ jobs:
           test -f reports/performance_sla_report.json
           test -f reports/performance_sla_report.md
 
+      - name: Upload Benchmark & SLA Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-reports-python-${{ matrix.python-version }}
+          path: |
+            reports/benchmark_results.csv
+            reports/experiment_summary.md
+            reports/retrieval_analysis.md
+            reports/performance_sla_report.json
+            reports/performance_sla_report.md
+            reports/neural_generation_benchmark.csv
+            reports/neural_generation_summary.md
+          retention-days: 30
+

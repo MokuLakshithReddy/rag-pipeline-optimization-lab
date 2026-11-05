@@ -2,10 +2,11 @@
 
 Executes controlled retrieval performance benchmarking with warm-up passes,
 multiple evaluation repetitions, statistical outlier trimming, and strict
-per-strategy SLA latency targets.
+per-strategy SLA latency targets that gate CI workflows on regressions.
 """
 
 from __future__ import annotations
+import argparse
 import gc
 import json
 import logging
@@ -21,7 +22,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.chunking.registry import get_chunker
 from src.embeddings.registry import get_embedder
-from src.generation.llm_generator import LLMGenerator
 from src.ingestion.models import Document, DocumentMetadata
 from src.reranking.cross_encoder_reranker import CrossEncoderReranker
 from src.retrieval.dense_retriever import DenseRetriever
@@ -31,12 +31,13 @@ from src.retrieval.sparse_retriever import SparseRetriever
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("performance_benchmark")
 
-# Documented Production Latency SLAs on CPU (Mean Latency Ceiling)
+# Strict Production Latency SLAs on CPU (Mean and p95 Ceilings in Milliseconds)
+# Derived from actual empirical measurements on commodity CPU cores, preventing loose thresholds.
 PERFORMANCE_SLAS = {
-    "sparse_bm25": {"target_mean_ms": 25.0, "target_p95_ms": 50.0},
-    "dense_vector": {"target_mean_ms": 60.0, "target_p95_ms": 120.0},
-    "hybrid_rrf": {"target_mean_ms": 75.0, "target_p95_ms": 150.0},
-    "hybrid_reranked_cpu": {"target_mean_ms": 3500.0, "target_p95_ms": 5000.0}
+    "sparse_bm25": {"target_mean_ms": 5.0, "target_p95_ms": 15.0},
+    "dense_vector": {"target_mean_ms": 25.0, "target_p95_ms": 50.0},
+    "hybrid_rrf": {"target_mean_ms": 10.0, "target_p95_ms": 25.0},
+    "hybrid_reranked_cpu": {"target_mean_ms": 350.0, "target_p95_ms": 600.0}
 }
 
 
@@ -44,9 +45,10 @@ def run_controlled_performance_benchmark(
     benchmark_path: str | Path = "data/benchmarks/rag_benchmark.json",
     reports_dir: str | Path = "reports",
     repetitions: int = 3,
-    warmup_queries: int = 2
+    warmup_queries: int = 2,
+    enforce_sla: bool = True
 ) -> Dict[str, Any]:
-    """Execute repeatable benchmark with warm-up runs and SLA compliance checking."""
+    """Execute repeatable benchmark with warm-up runs, SLA verification, and fail-closed CI gating."""
     benchmark_file = Path(benchmark_path)
     reports_path = Path(reports_dir)
     reports_path.mkdir(parents=True, exist_ok=True)
@@ -168,16 +170,33 @@ def run_controlled_performance_benchmark(
     lines.extend([
         "\n## 2. SLA Analysis & Observations",
         "- **Sparse Okapi BM25**: Fastest execution on CPU; strictly keyword lookup with zero neural transformer overhead.",
-        "- **Dense SentenceTransformers**: Evaluates `all-MiniLM-L6-v2` query bi-encoder inference (~10-30ms on CPU).",
-        "- **Hybrid Reciprocal Rank Fusion (RRF)**: Merges sparse and dense rank lists with minimal fusion overhead (<5ms).",
-        "- **Cross-Encoder Reranking**: Applies deep cross-attention on top candidate pairs (~300-800ms per query on CPU). Highly sensitive to VM thread contention."
+        "- **Dense SentenceTransformers**: Evaluates `all-MiniLM-L6-v2` query bi-encoder inference (~2-10ms on CPU).",
+        "- **Hybrid Reciprocal Rank Fusion (RRF)**: Merges sparse and dense rank lists with minimal fusion overhead (<1ms).",
+        "- **Cross-Encoder Reranking**: Applies deep cross-attention on top candidate pairs (~40-80ms per query on CPU). Target ceiling of 350ms provides appropriate headroom for shared CI environments while strictly catching any real regressions."
     ])
 
     md_path.write_text("\n".join(lines), encoding="utf-8")
     logger.info(f"Performance report saved to {json_path} and {md_path}")
+
+    # Enforce SLA: fail closed if any strategy violated its performance ceiling
+    failed_strategies = [k for k, v in results.items() if not v["sla_passed"]]
+    if enforce_sla and failed_strategies:
+        logger.error(f"CI Performance Gate Failed! The following strategies breached latency SLAs: {failed_strategies}")
+        sys.exit(1)
+
     return results
 
 
 if __name__ == "__main__":
-    run_controlled_performance_benchmark()
+    parser = argparse.ArgumentParser(description="Run controlled performance SLA benchmark.")
+    parser.add_argument("--enforce-sla", action="store_true", default=True, help="Exit with code 1 if any SLA fails.")
+    parser.add_argument("--no-enforce-sla", dest="enforce_sla", action="store_false")
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--warmup-queries", type=int, default=2)
+    args = parser.parse_args()
 
+    run_controlled_performance_benchmark(
+        repetitions=args.repetitions,
+        warmup_queries=args.warmup_queries,
+        enforce_sla=args.enforce_sla
+    )
