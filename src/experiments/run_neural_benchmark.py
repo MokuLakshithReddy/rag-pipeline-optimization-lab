@@ -2,7 +2,7 @@
 
 Evaluates token F1, factual claim entailment, and end-to-end generation latency
 using actual transformer LLM generation (e.g. google/flan-t5-small or Gemini API)
-rather than deterministic extractive mock heuristics.
+and records the exact NLI evaluation mechanism (transformer NLI, LLM judge, or proposition heuristic).
 """
 
 from __future__ import annotations
@@ -42,7 +42,9 @@ def run_neural_generation_benchmark(
     benchmark_path: str | Path = "data/benchmarks/rag_benchmark.json",
     reports_dir: str | Path = "reports",
     model_name: str = "google/flan-t5-small",
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    nli_model_name: Optional[str] = None,
+    use_llm_judge: bool = False
 ) -> List[Dict[str, Any]]:
     """Execute evaluation with an active neural generative model."""
     path = Path(benchmark_path)
@@ -90,7 +92,14 @@ def run_neural_generation_benchmark(
 
     logger.info(f"Initializing Neural Generator: provider='{resolved_provider}', model='{model_name}'")
     generator = LLMGenerator(provider=resolved_provider, model_name=model_name)
-    nli_evaluator = FactualEntailmentEvaluator()
+
+    llm_judge_instance = generator if use_llm_judge else None
+    nli_evaluator = FactualEntailmentEvaluator(
+        nli_model_name=nli_model_name,
+        llm_judge=llm_judge_instance
+    )
+    active_eval_mode = nli_evaluator.active_evaluator_mode
+    logger.info(f"Configured Faithfulness Evaluator Mode: {active_eval_mode}")
 
     experiments = [
         {
@@ -116,7 +125,7 @@ def run_neural_generation_benchmark(
             "retriever": hybrid,
             "rerank": True,
             "name": "Hybrid RRF + Cross-Encoder + Neural LLM"
-        },
+        }
     ]
 
     results_records: List[Dict[str, Any]] = []
@@ -141,6 +150,7 @@ def run_neural_generation_benchmark(
             "pipeline_name": exp["name"],
             "generator_provider": generator.provider,
             "generator_model": generator.model_name,
+            "nli_evaluator_mode": active_eval_mode,
             "mrr": round(metrics["mrr"], 4),
             "ndcg_at_k": round(metrics["ndcg_at_k"], 4),
             "hit_at_k": round(metrics["hit_at_k"], 4),
@@ -166,15 +176,16 @@ def run_neural_generation_benchmark(
     summary_path = reports / "neural_generation_summary.md"
     lines = [
         "# Real Neural LLM Generation & Factual Faithfulness Benchmark Report",
-        f"\n*Evaluated with live neural generative model: `{generator.provider}` / `{generator.model_name}`*",
-        f"*Evaluation Date: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}*\n",
+        f"\n- **Generator Engine**: `{generator.provider}` / `{generator.model_name}`",
+        f"- **Faithfulness Evaluator**: `{active_eval_mode}`",
+        f"- **Evaluation Timestamp**: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n",
         "## 1. End-to-End Generation & Grounding Performance Table\n",
-        "| Experiment ID | Retrieval Pipeline | Generator Model | MRR | NDCG@5 | Answer F1 | Factual Faithfulness | Generation Latency | Total Latency (p95) |",
-        "| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |"
+        "| Experiment ID | Retrieval Pipeline | Generator Model | NLI Evaluator Mode | MRR | NDCG@5 | Answer F1 | Faithfulness | Generation Latency | Total Latency (p95) |",
+        "| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |"
     ]
     for r in results_records:
         lines.append(
-            f"| `{r['experiment_id']}` | {r['pipeline_name']} | `{r['generator_model']}` | "
+            f"| `{r['experiment_id']}` | {r['pipeline_name']} | `{r['generator_model']}` | `{r['nli_evaluator_mode']}` | "
             f"**{r['mrr']:.3f}** | {r['ndcg_at_k']:.3f} | **{r['answer_token_f1']:.3f}** | "
             f"**{r['factual_faithfulness']:.3f}** | {r['generation_latency_ms']:.1f}ms | {r['latency_p95_ms']:.1f}ms |"
         )
@@ -182,8 +193,8 @@ def run_neural_generation_benchmark(
     lines.extend([
         "\n## 2. Key Empirical Findings on Real Neural Generation",
         "- **Actual Neural Synthesis**: Demonstrates genuine abstractive text generation, evaluating real factual grounding and token F1 against expert reference answers.",
-        "- **NLI Factual Verification**: Faithfulness is evaluated via proposition claim extraction and entailment classification against evidence passages.",
-        "- **Generation Bottleneck**: Generation latency (~100-300ms on CPU) dominates retrieval time (~2-4ms for RRF), highlighting why hybrid retrieval efficiency is essential in production RAG systems."
+        f"- **Evaluator Transparency**: Faithfulness was evaluated using `{active_eval_mode}`. When running without a dedicated 3-class NLI transformer or LLM judge, the system explicitly reports rule-based proposition verification rather than claiming unverified neural entailment.",
+        "- **Generation Bottleneck**: Generation latency (~380-2250ms on CPU) accounts for the vast majority of end-to-end response time compared to sub-5ms hybrid retrieval."
     ])
 
     summary_path.write_text("\n".join(lines), encoding="utf-8")
@@ -196,7 +207,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run real neural LLM generation benchmark.")
     parser.add_argument("--model-name", default="google/flan-t5-small")
     parser.add_argument("--provider", default=None)
+    parser.add_argument("--nli-model", default=None)
+    parser.add_argument("--use-llm-judge", action="store_true")
     args = parser.parse_args()
 
-    run_neural_generation_benchmark(model_name=args.model_name, provider=args.provider)
-
+    run_neural_generation_benchmark(
+        model_name=args.model_name,
+        provider=args.provider,
+        nli_model_name=args.nli_model,
+        use_llm_judge=args.use_llm_judge
+    )

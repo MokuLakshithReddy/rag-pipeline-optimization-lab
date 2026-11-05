@@ -35,6 +35,17 @@ class FactualEntailmentEvaluator:
         if self.nli_model_name and not lazy_load:
             self._ensure_model()
 
+    @property
+    def active_evaluator_mode(self) -> str:
+        """Return the active evaluation mode and model name."""
+        self._ensure_model()
+        if self._nli_model is not None and not self._load_failed:
+            return f"transformer_nli ({self.nli_model_name})"
+        elif self.llm_judge is not None:
+            model_id = getattr(self.llm_judge, "model_name", "custom_llm")
+            return f"llm_judge ({model_id})"
+        return "heuristic_claim_verifier"
+
     def _ensure_model(self) -> None:
         """Lazy load dedicated 3-class NLI Cross-Encoder if a model name is configured."""
         if not self.nli_model_name:
@@ -126,8 +137,38 @@ class FactualEntailmentEvaluator:
             except Exception as e:
                 logger.warning(f"NLI model inference error: {e}, falling back to heuristic verification.")
 
-        # Heuristic Anchor & Relational Entailment
+        # 2. LLM-as-a-Judge Evaluation if configured
+        if self.llm_judge is not None:
+            return self._evaluate_claim_llm_judge(claim, context_sentences)
+
+        # 3. Heuristic Anchor & Relational Entailment
         return self._heuristic_claim_verification(claim, context_sentences)
+
+    def _evaluate_claim_llm_judge(self, claim: str, context_sentences: List[str]) -> Tuple[str, float]:
+        """Invoke configured LLM judge for proposition entailment verification."""
+        try:
+            premise_text = " ".join(context_sentences[:8])
+            prompt = (
+                f"Premise: {premise_text}\n"
+                f"Hypothesis: {claim}\n"
+                f"Does the Premise entail the Hypothesis? Answer ONLY with ENTAILED, CONTRADICTED, or NEUTRAL:"
+            )
+            resp = self.llm_judge.generate(
+                query=prompt,
+                context=premise_text,
+                citations=[],
+                retrieved_chunks=[]
+            )
+            raw = (resp.answer or "").upper()
+            if "CONTRADICT" in raw:
+                return "contradicted", 0.0
+            elif "ENTAIL" in raw:
+                return "entailed", 1.0
+            else:
+                return "neutral", 0.5
+        except Exception as e:
+            logger.warning(f"LLM judge inference error: {e}, falling back to heuristic verification.")
+            return self._heuristic_claim_verification(claim, context_sentences)
 
     def _heuristic_claim_verification(self, claim: str, context_sentences: List[str]) -> Tuple[str, float]:
         """Precise entity-grounded heuristic entailment verification."""
@@ -243,5 +284,6 @@ class FactualEntailmentEvaluator:
             "entailed_claims": entailed_count,
             "contradicted_claims": contra_count,
             "neutral_claims": neutral_count,
+            "evaluator_mode": self.active_evaluator_mode,
             "claims_details": claim_details
         }

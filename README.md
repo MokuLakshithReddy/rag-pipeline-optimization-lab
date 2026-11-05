@@ -61,9 +61,9 @@ SentenceTransformers        Okapi BM25
 - **Hybrid Fusion (RRF)**: Reciprocal Rank Fusion ($k=60$) dynamically merges dense and sparse rankings without arbitrary score scaling.
 - **Cross-Encoder Reranker**: `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks top candidate chunks with full query-chunk cross-attention (with enforced strict mode to prevent silent lexical fallback).
 - **Context Optimizer**: Formats source citations, removes redundant chunks, and places top evidence at the beginning and end of context.
-- **Dedicated NLI Factual Entailment**: `FactualEntailmentEvaluator` decomposes answers into proposition claims and verifies 3-class entailment (`entailed`, `contradicted`, `neutral`) rather than conflating query relevance with factual grounding.
+- **Dedicated NLI Factual Entailment**: `FactualEntailmentEvaluator` decomposes answers into proposition claims and verifies 3-class entailment (`entailed`, `contradicted`, `neutral`) with transparent reporting of evaluation mode (`heuristic_claim_verifier`, `transformer_nli`, or `llm_judge`).
 - **Multi-Tenant State Isolation**: `MultiTenantStateManager` isolates uploads, vector stores, and BM25 indices per tenant while reusing singleton neural weights across requests.
-- **Security by Design**: Header API Key authentication (`X-API-Key` or `Bearer`), path traversal sanitization, 25MB upload ceiling, content type validation, prompt injection containment, and safe error logging.
+- **Fail-Closed Security**: Rejects all unconfigured requests with HTTP 401; maps tenant credentials strictly via `API_KEYS`; blocks cross-tenant header escalation with HTTP 403; enforces 25MB upload ceilings, path traversal sanitization, and prompt injection containment.
 
 ---
 
@@ -82,14 +82,14 @@ Controlled single-variable experiments were conducted against a verified 30-docu
 | `EXP-06-Hybrid-Reranked` | Hybrid | Recursive (512/64) | Neural Cross-Encoder | mock | **1.000** | **0.972** | **0.979** | 307.1ms | +101.5MB |
 
 ### End-to-End Real Neural LLM Generation & NLI Verification
-In addition to mock extractive heuristics, an end-to-end benchmark was executed using an active local neural generative model (`google/flan-t5-small`) evaluated with genuine proposition-level NLI factual entailment:
+In addition to mock extractive heuristics used for retrieval ablations, an end-to-end benchmark was executed using an active local neural generative model (`google/flan-t5-small`) evaluated with transparently reported proposition-level NLI:
 
-| Experiment ID | Retrieval Pipeline | Generator Model | MRR | NDCG@5 | Answer F1 | Factual Faithfulness | Generation Latency | Total Latency (p95) |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | **0.926** | 0.944 | **0.214** | **1.000** | 2256.6ms | 6216.1ms |
-| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | **0.956** | 0.966 | **0.123** | **0.975** | 723.6ms | 1623.7ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | **1.000** | 1.000 | **0.172** | **0.950** | 829.6ms | 1597.0ms |
-| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | **0.972** | 0.980 | **0.035** | **1.000** | 379.6ms | 1112.5ms |
+| Experiment ID | Retrieval Pipeline | Generator Model | NLI Evaluator Mode | MRR | NDCG@5 | Answer F1 | Faithfulness | Generation Latency | Total Latency (p95) |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.926** | 0.944 | **0.214** | **1.000** | 764.1ms | 1445.0ms |
+| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.956** | 0.966 | **0.123** | **0.975** | 701.0ms | 1916.3ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | 1.000 | **0.172** | **0.950** | 742.9ms | 1403.3ms |
+| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.972** | 0.980 | **0.175** | **1.000** | 628.0ms | 1445.1ms |
 
 ### The Latency-Accuracy Pareto Frontier
 - **Low-Latency Production (<20ms SLA)**: Pure **Hybrid RRF** (`EXP-05`) achieves optimal MRR (1.000) and NDCG (1.000) on the development benchmark with a 4.0ms p95 latency and 0MB incremental memory footprint.

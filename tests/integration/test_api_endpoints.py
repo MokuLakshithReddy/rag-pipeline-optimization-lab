@@ -1,12 +1,21 @@
 """Integration tests for FastAPI REST API endpoints with authentication and multi-tenancy."""
 
 import io
+import os
+import pytest
 from fastapi.testclient import TestClient
-from api.auth import DEFAULT_DEV_API_KEY
+
+# Configure explicit test credentials in environment before app imports
+os.environ["API_KEYS"] = "test-key-default:default,test-key-alpha:tenant-alpha,test-key-beta:tenant-beta,test-key-admin:admin"
+os.environ["API_KEY"] = "test-key-default"
+
 from api.main import app
 
 client = TestClient(app)
-AUTH_HEADERS = {"X-API-Key": DEFAULT_DEV_API_KEY}
+AUTH_HEADERS = {"X-API-Key": "test-key-default"}
+AUTH_HEADERS_ALPHA = {"X-API-Key": "test-key-alpha"}
+AUTH_HEADERS_BETA = {"X-API-Key": "test-key-beta"}
+AUTH_HEADERS_ADMIN = {"X-API-Key": "test-key-admin"}
 
 
 def test_api_health():
@@ -37,18 +46,43 @@ def test_api_authentication_enforcement():
     assert resp_valid.status_code == 200
 
 
+def test_cross_tenant_escalation_blocked():
+    """Ordinary tenants attempting to switch tenant workspaces via X-Tenant-ID must receive 403 Forbidden."""
+    # Tenant Alpha attempts to access Tenant Beta's workspace
+    resp = client.get("/v1/documents", headers={"X-API-Key": "test-key-alpha", "X-Tenant-ID": "tenant-beta"})
+    assert resp.status_code == 403
+    assert "Ordinary tenants are not authorized to switch tenant workspaces" in resp.json()["detail"]
+
+
+def test_admin_cross_tenant_access_permitted():
+    """Administrative keys are explicitly permitted to switch tenant workspaces."""
+    resp = client.get("/v1/documents", headers={"X-API-Key": "test-key-admin", "X-Tenant-ID": "tenant-alpha"})
+    assert resp.status_code == 200
+
+
+def test_fail_closed_when_unconfigured(monkeypatch):
+    """When no API keys are configured, all protected requests must fail closed with 401."""
+    monkeypatch.setenv("API_KEYS", "")
+    monkeypatch.delenv("API_KEY", raising=False)
+    resp = client.get("/v1/documents", headers={"X-API-Key": "any-token"})
+    assert resp.status_code == 401
+    assert "No valid API keys are registered" in resp.json()["detail"]
+
+
 def test_api_document_upload_and_listing():
     file_content = b"Knowledge Base Document: Docker containers package software and its dependencies."
     files = [("files", ("docker.txt", io.BytesIO(file_content), "text/plain"))]
 
     upload_resp = client.post("/v1/documents", files=files, headers=AUTH_HEADERS)
     assert upload_resp.status_code == 200
-    assert upload_resp.json()["status"] == "success"
+    data = upload_resp.json()
+    assert data["total_documents_ingested"] >= 1
+    assert "docker.txt" in data["uploaded_files"]
 
+    # List documents
     list_resp = client.get("/v1/documents", headers=AUTH_HEADERS)
     assert list_resp.status_code == 200
-    docs = list_resp.json()["documents"]
-    assert any(d["source"] == "docker.txt" for d in docs)
+    assert any(doc["source"] == "docker.txt" for doc in list_resp.json()["documents"])
 
 
 def test_api_indexing_and_querying():
@@ -93,24 +127,21 @@ def test_api_indexing_and_querying():
 
 def test_multi_tenant_isolation():
     """Verify separate tenants have completely independent, non-leaking document stores and indices."""
-    headers_tenant_a = {"X-API-Key": DEFAULT_DEV_API_KEY, "X-Tenant-ID": "tenant-alpha"}
-    headers_tenant_b = {"X-API-Key": DEFAULT_DEV_API_KEY, "X-Tenant-ID": "tenant-beta"}
-
     # 1. Tenant Alpha uploads document on Quantum Computing
     content_a = b"Quantum annealing uses quantum fluctuations to find the global minimum of an objective function."
     files_a = [("files", ("quantum.txt", io.BytesIO(content_a), "text/plain"))]
-    resp_a = client.post("/v1/documents", files=files_a, headers=headers_tenant_a)
+    resp_a = client.post("/v1/documents", files=files_a, headers=AUTH_HEADERS_ALPHA)
     assert resp_a.status_code == 200
 
     # 2. Tenant Beta uploads document on Aeronautical Propulsion
     content_b = b"Turbofan engines utilize bypass air around the core to achieve high propulsive efficiency."
     files_b = [("files", ("propulsion.txt", io.BytesIO(content_b), "text/plain"))]
-    resp_b = client.post("/v1/documents", files=files_b, headers=headers_tenant_b)
+    resp_b = client.post("/v1/documents", files=files_b, headers=AUTH_HEADERS_BETA)
     assert resp_b.status_code == 200
 
     # 3. Assert document lists are isolated
-    docs_a = client.get("/v1/documents", headers=headers_tenant_a).json()["documents"]
-    docs_b = client.get("/v1/documents", headers=headers_tenant_b).json()["documents"]
+    docs_a = client.get("/v1/documents", headers=AUTH_HEADERS_ALPHA).json()["documents"]
+    docs_b = client.get("/v1/documents", headers=AUTH_HEADERS_BETA).json()["documents"]
 
     assert any(d["source"] == "quantum.txt" for d in docs_a)
     assert not any(d["source"] == "propulsion.txt" for d in docs_a)
@@ -119,15 +150,15 @@ def test_multi_tenant_isolation():
     assert not any(d["source"] == "quantum.txt" for d in docs_b)
 
     # 4. Index both tenants independently
-    client.post("/v1/index", json={"chunking_strategy": "recursive", "chunk_size": 256, "chunk_overlap": 32}, headers=headers_tenant_a)
-    client.post("/v1/index", json={"chunking_strategy": "recursive", "chunk_size": 256, "chunk_overlap": 32}, headers=headers_tenant_b)
+    client.post("/v1/index", json={"chunking_strategy": "recursive", "chunk_size": 256, "chunk_overlap": 32}, headers=AUTH_HEADERS_ALPHA)
+    client.post("/v1/index", json={"chunking_strategy": "recursive", "chunk_size": 256, "chunk_overlap": 32}, headers=AUTH_HEADERS_BETA)
 
     # 5. Query Tenant Alpha for propulsion -> should abstain or find zero propulsion chunks
-    q_a = client.post("/v1/query", json={"query": "How do turbofan engines work?", "retrieval_strategy": "hybrid"}, headers=headers_tenant_a).json()
+    q_a = client.post("/v1/query", json={"query": "How do turbofan engines work?", "retrieval_strategy": "hybrid"}, headers=AUTH_HEADERS_ALPHA).json()
     assert not any("turbofan" in c["chunk"]["text"].lower() for c in q_a["retrieved_chunks"])
 
     # 6. Query Tenant Beta for propulsion -> should find turbofan chunk
-    q_b = client.post("/v1/query", json={"query": "How do turbofan engines work?", "retrieval_strategy": "hybrid"}, headers=headers_tenant_b).json()
+    q_b = client.post("/v1/query", json={"query": "How do turbofan engines work?", "retrieval_strategy": "hybrid"}, headers=AUTH_HEADERS_BETA).json()
     assert any("turbofan" in c["chunk"]["text"].lower() for c in q_b["retrieved_chunks"])
 
 

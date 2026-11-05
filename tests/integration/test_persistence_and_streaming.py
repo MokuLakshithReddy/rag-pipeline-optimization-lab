@@ -1,15 +1,17 @@
 """Integration tests for state persistence across restarts, streaming upload limits, and request IDs."""
 
 import io
+import os
 from pathlib import Path
 from fastapi.testclient import TestClient
-from api.auth import DEFAULT_DEV_API_KEY
+
+os.environ["API_KEY"] = "test-key-default"
 from api.main import app
 from api.pipeline_state import PipelineState
 from src.generation.llm_generator import LLMGenerator
 
 client = TestClient(app)
-AUTH_HEADERS = {"X-API-Key": DEFAULT_DEV_API_KEY}
+AUTH_HEADERS = {"X-API-Key": "test-key-default"}
 
 
 def test_persistent_state_recovery_across_restarts(tmp_path):

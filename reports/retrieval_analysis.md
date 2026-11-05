@@ -50,18 +50,18 @@ Additionally, end-to-end neural LLM generation was benchmarked using an active l
 ---
 
 ## 5. Real Neural LLM Generation & Factual Faithfulness
-In addition to mock extractive heuristics, an end-to-end neural generation benchmark was executed using `google/flan-t5-small`:
+In addition to mock extractive heuristics used for retrieval ablations, an end-to-end neural generation benchmark was executed using `google/flan-t5-small`:
 
-| Experiment ID | Retrieval Strategy | Generator | Retrieval MRR | Answer Token F1 | Factual Faithfulness | Generation Latency |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | 0.926 | 0.214 | 1.000 | 2256.6 ms |
-| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | 0.956 | 0.123 | 0.975 | 723.6 ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | **1.000** | 0.172 | 0.950 | 829.6 ms |
-| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | 0.972 | 0.035 | **1.000** | 379.6 ms |
+| Experiment ID | Retrieval Strategy | Generator | NLI Evaluator Mode | Retrieval MRR | Answer Token F1 | Faithfulness | Generation Latency |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.926 | 0.214 | 1.000 | 764.1 ms |
+| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.956 | 0.123 | 0.975 | 701.0 ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | 0.172 | 0.950 | 742.9 ms |
+| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.972 | 0.175 | **1.000** | 628.0 ms |
 
 - **Key Generation Takeaways**:
-  1. **The Generation Bottleneck**: Generation latency (380 ms to 2250 ms) accounts for over 90% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
-  2. **Grounded Abstractive Synthesis**: Neural models generate coherent sentences rather than extractive spans. Token F1 against terse reference answers is naturally lower for abstractive synthesis, making NLI factual verification essential.
+  1. **The Generation Bottleneck**: Generation latency (~600 ms to 800 ms) accounts for over 95% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
+  2. **Grounded Abstractive Synthesis**: Neural models generate coherent sentences rather than extractive spans. Token F1 against terse reference answers is naturally lower for abstractive synthesis, making proposition-level factual verification essential.
 
 ---
 
@@ -70,12 +70,15 @@ In addition to mock extractive heuristics, an end-to-end neural generation bench
 - **Dedicated NLI Verifier (`FactualEntailmentEvaluator`)**:
   - Extracts individual factual claims and propositions from generated answers.
   - Verifies entity, numeric, and assertion grounding against retrieved context.
-  - Computes 3-class NLI verdicts (`entailed`, `contradicted`, `neutral`) using dedicated NLI transformers (`cross-encoder/nli-deberta-v3-small`) or validated heuristic logic, preventing false positives from relevance scoring.
+  - Supports 3-class NLI verdicts (`entailed`, `contradicted`, `neutral`) using dedicated NLI transformers (`cross-encoder/nli-deberta-v3-small`), LLM-as-a-judge prompts, or deterministic proposition heuristics.
+  - **Evaluator Transparency**: The pipeline explicitly records which evaluation mode was executed (`heuristic_claim_verifier`, `transformer_nli`, or `llm_judge`) to prevent misrepresenting rule-based checks as neural NLI inference.
 
 ---
 
 ## 7. Production Security & Multi-Tenant State Isolation
-- **API Authentication**: The FastAPI production gateway enforces authentication via `X-API-Key` or `Authorization: Bearer <key>`. Unauthenticated requests receive HTTP 401 Unauthorized.
+- **Fail-Closed API Authentication**: The FastAPI production gateway enforces fail-closed authentication. If no API keys are registered in the server environment, all requests are rejected with HTTP 401 Unauthorized.
+- **Tenant-Specific Credential Binding**: API keys are mapped directly to specific tenant IDs via `API_KEYS` (e.g. `key_alpha:tenant_a,key_beta:tenant_b,master_key:admin`).
+- **Cross-Tenant Boundary Protections**: Ordinary tenants cannot switch workspaces using the `X-Tenant-ID` header; attempts to access another tenant's workspace trigger HTTP 403 Forbidden. Cross-tenant access is restricted exclusively to authenticated administrators (`is_admin=True`).
 - **Strict Multi-Tenancy (`MultiTenantStateManager`)**:
   - Independent uploads (`data/tenants/{tenant_id}/uploads`) and index storage (`data/tenants/{tenant_id}/indices`).
   - Isolated in-memory vector indices and BM25 inverted indices per tenant.

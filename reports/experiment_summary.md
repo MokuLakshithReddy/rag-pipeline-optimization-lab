@@ -1,9 +1,11 @@
 # Retrieval-Augmented Generation (RAG) Optimization Benchmark Summary
 
-*Generated on: 2026-11-05T02:55:30Z*
+*Generated on: 2026-11-05T03:22:25Z*
 *Total Controlled Experiments: 6 Retrieval Ablations + 4 Neural LLM Generation Benchmarks*
 
-## 1. Controlled Retrieval Experiment Results Table
+## 1. Controlled Retrieval Experiment Results Table (Retrieval Ablation)
+
+*Note: Retrieval ablation experiments deliberately utilize deterministic mock extractive generation to isolate retrieval ranking, chunking granularity, and fusion efficiency without introducing generation variance or external API dependencies.*
 
 | Experiment ID | Strategy | Chunker (Size/Overlap) | Reranker (Status) | Generator | Hit@K | Precision@K | Recall@K | MRR | NDCG@K | Total Latency (p95) | Delta RSS | Peak Heap |
 | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -18,14 +20,14 @@
 
 ## 2. Real Neural LLM Generation & Factual Grounding Results
 
-*Evaluated with active local transformer generator `google/flan-t5-small` and genuine 3-class proposition NLI verification:*
+*Evaluated with active local transformer generator `google/flan-t5-small` and transparently reported proposition-level NLI verification:*
 
-| Experiment ID | Retrieval Pipeline | Generator Model | MRR | NDCG@5 | Answer F1 | Factual Faithfulness | Generation Latency | Total Latency (p95) |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | **0.926** | 0.944 | **0.214** | **1.000** | 2256.6ms | 6216.1ms |
-| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | **0.956** | 0.966 | **0.123** | **0.975** | 723.6ms | 1623.7ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | **1.000** | 1.000 | **0.172** | **0.950** | 829.6ms | 1597.0ms |
-| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | **0.972** | 0.980 | **0.035** | **1.000** | 379.6ms | 1112.5ms |
+| Experiment ID | Retrieval Pipeline | Generator Model | NLI Evaluator Mode | MRR | NDCG@5 | Answer F1 | Faithfulness | Generation Latency | Total Latency (p95) |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.926** | 0.944 | **0.214** | **1.000** | 764.1ms | 1445.0ms |
+| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.956** | 0.966 | **0.123** | **0.975** | 701.0ms | 1916.3ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | 1.000 | **0.172** | **0.950** | 742.9ms | 1403.3ms |
+| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.972** | 0.980 | **0.175** | **1.000** | 628.0ms | 1445.1ms |
 
 ---
 
@@ -47,8 +49,8 @@
 
 ---
 
-## 5. Methodological & Verification Rigor
+## 5. Methodological Rigor & Evaluator Transparency
 
-- **Genuine NLI Verification**: Evaluated using `FactualEntailmentEvaluator` (claim decomposition, entity grounding, 3-class entailment/neutral/contradiction) rather than conflating MS-MARCO query-passage relevance scores with premise-hypothesis entailment.
+- **Faithfulness Evaluator Transparency**: The factual entailment suite records the exact evaluator mode (`heuristic_claim_verifier`, `transformer_nli: <model>`, or `llm_judge: <model>`). When executed without a dedicated transformer NLI model, it explicitly logs that deterministic proposition-level entity & negation grounding was used rather than claiming unverified neural entailment.
 - **Incremental Memory (Delta RSS)**: Measures net physical memory change (`RSS_after - RSS_before`) attributable to that experiment pass, capturing native C++/PyTorch allocations as well as Python heap.
 - **Strict Reranker Validation**: Strict mode is enforced on Cross-Encoder reranking (`strict_mode=True`); silent fallback to lexical reranking is prohibited and raises a hard runtime exception.
