@@ -51,7 +51,7 @@ jobs:
 
       - name: Execute Scalability & Concurrency Benchmark
         run: |
-          python src/experiments/benchmark_scalability.py --corpus-tiers 30 100 --concurrency-levels 1 5 10
+          python src/experiments/benchmark_scalability.py --corpus-tiers 30 100 500 --concurrency-levels 1 5 10 20
 
       - name: Verify Performance Artifacts
         run: |

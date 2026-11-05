@@ -104,3 +104,22 @@ def test_kaggle_submission_rejects_duplicate_ids(test_files_dir):
     with pytest.raises(KaggleValidationError, match="duplicate query IDs"):
         validator.validate(sub_path)
 
+
+def test_kaggle_submission_fails_closed_on_unmatched_test_set_ids(test_files_dir):
+    """Verify validator fails closed if a supplied test set has no recognized query ID column."""
+    invalid_test_path = test_files_dir["dir"] / "bad_test_set.csv"
+    bad_df = pd.DataFrame([
+        {"unrecognized_id": "1", "question": "What is Raft?"}
+    ])
+    bad_df.to_csv(invalid_test_path, index=False)
+
+    sub_path = test_files_dir["dir"] / "submission.csv"
+    valid_sub = pd.DataFrame([
+        {"query_id": "1", "prediction": "Valid answer"}
+    ])
+    valid_sub.to_csv(sub_path, index=False)
+
+    validator = KaggleSubmissionValidator()
+    with pytest.raises(KaggleValidationError, match="Could not identify a valid query ID column in the provided test set"):
+        validator.validate(sub_path, invalid_test_path)
+

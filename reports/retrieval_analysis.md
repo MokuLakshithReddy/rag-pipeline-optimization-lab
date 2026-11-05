@@ -46,9 +46,9 @@ Additionally, end-to-end neural LLM generation was benchmarked using an active l
 ## 4. Controlled Benchmark Scope & Scalability Evidence
 - **Controlled Development Corpus**: The 30-document, 20-query evaluation set provides controlled ground truth covering distributed systems, security protocols, containerization, and data structures for causal ablation.
 - **Controlled Benchmark Qualification**: Metrics reported on the development set establish rigorous experimental evidence rather than unconstrained production-scale proof.
-- **Production Scalability & Stress Benchmark**: To evaluate scaling behavior beyond the development set, stress tests were executed across multi-scale corpus tiers (up to 500 documents / 1,500+ chunks) and simulated concurrent client workloads (1 to 20 concurrent threads):
+- **Production Scalability & Stress Benchmark**: To evaluate scaling behavior beyond the development set, stress tests were executed across multi-scale corpus tiers (up to 500 documents / **1,503 chunks**) and simulated concurrent client workloads (1 to 20 concurrent threads):
   - In-memory dense and sparse indices scale sub-linearly with $O(\log N)$ query latencies maintaining sub-15ms execution on 500 documents.
-  - Multi-threaded load tests demonstrated sustained throughput of ~950–1,070 queries per second without lock contention.
+  - In-process warm-cache retrieval throughput sustains **~95–118 queries per second** with sub-12ms p95 latency on the 500-document tier, while cold-cache neural embedding on CPU reaches **~80 queries per second**.
   - See [reports/scalability_benchmark_report.md](scalability_benchmark_report.md) for full concurrency and memory scaling data.
 
 ---
@@ -56,16 +56,26 @@ Additionally, end-to-end neural LLM generation was benchmarked using an active l
 ## 5. Real Neural LLM Generation & Factual Faithfulness
 In addition to mock extractive heuristics used for retrieval ablations, an end-to-end neural generation benchmark was executed using `google/flan-t5-small`:
 
-| Experiment ID | Retrieval Strategy | Generator | NLI Evaluator Mode | Retrieval MRR | Answer Token F1 | Faithfulness | Generation Latency |
-| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.926 | **0.562** | **0.938** | 1024.6 ms |
-| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.956 | **0.543** | **0.912** | 1263.3 ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | **0.446** | **0.950** | 1209.3 ms |
-| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.972 | **0.449** | **0.938** | 1353.6 ms |
+| Experiment ID | Retrieval Strategy | Generator | Mode | Retrieval MRR | Answer Token F1 | Faithfulness | Generation Latency |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | `enhanced` | 0.926 | **0.562** | **0.938** | 3102.8 ms |
+| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | `enhanced` | 0.956 | **0.543** | **0.912** | 4120.4 ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `enhanced` | **1.000** | **0.446** | **0.950** | 4145.1 ms |
+| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | `enhanced` | 0.972 | **0.449** | **0.938** | 2829.5 ms |
+
+### Apples-to-Apples Generation Ablation (Same 20 Queries, Same Citation-Stripped Metric)
+To scientifically isolate how much of the F1 improvement originates from prompt design & grounded synthesis versus the metric change (stripping citation tags), both generation engines were evaluated on the **exact same 20 queries using the identical citation-stripped F1 metric**:
+
+| Generation Engine | Prompt Strategy | Fallback Synthesis | Answer Token F1 | Factual Faithfulness | Generation Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Legacy Generator** | Terse (`Context: ...\nQuestion: ...\nAnswer:`) | None (Raw fragments) | **0.191** | 0.950 | 5251.9 ms |
+| **Enhanced Generator** | Guided Sentence Instruction | Grounded Sentence Synthesis | **0.446** | 0.950 | 4145.1 ms |
+
+- **Isolated Prompt & Synthesis Delta**: **+0.255 F1 gain (+133.8%)** purely attributable to guided sentence instructions and grounded synthesis, holding the evaluation metric strictly identical.
 
 - **Key Generation Takeaways**:
-  1. **Substantial Generation F1 Improvement**: Guided sentence prompting and grounded synthesis increased Answer Token F1 from ~0.12–0.21 up to **0.45–0.56**, producing complete, informative sentences while maintaining high factual precision.
-  2. **The Generation Bottleneck**: Generation latency (~1000 ms to 1350 ms on CPU) accounts for over 98% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
+  1. **Substantial Generation F1 Improvement**: Guided sentence prompting and grounded synthesis increased Answer Token F1 from ~0.19 to **0.45–0.56**, producing complete, informative sentences while maintaining high factual precision.
+  2. **The Generation Bottleneck**: Generation latency (~2.8s to 4.1s on CPU) accounts for over 98% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
   3. **Evaluator Transparency**: Faithfulness was evaluated using `heuristic_claim_verifier`. The pipeline explicitly records which evaluation mode was executed rather than falsely claiming neural NLI inference.
 
 ---

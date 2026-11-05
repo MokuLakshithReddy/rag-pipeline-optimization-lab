@@ -87,30 +87,44 @@ Controlled single-variable experiments were conducted against a verified 30-docu
 ### B. End-to-End Real Neural LLM Generation & Factual Verification
 In addition to mock extractive heuristics used for retrieval ablations, an end-to-end benchmark was executed using an active local neural generative model (`google/flan-t5-small`) evaluated with transparently reported proposition-level NLI:
 
-| Experiment ID | Retrieval Pipeline | Generator Model | NLI Evaluator Mode | MRR | NDCG@5 | Answer F1 | Faithfulness | Generation Latency | Total Latency (p95) |
-| :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.926** | 0.944 | **0.562** | **0.938** | 1024.6ms | 1546.8ms |
-| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.956** | 0.966 | **0.543** | **0.912** | 1263.3ms | 2211.2ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | 1.000 | **0.446** | **0.950** | 1209.3ms | 1987.5ms |
-| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | `heuristic_claim_verifier` | **0.972** | 0.980 | **0.449** | **0.938** | 1353.6ms | 3200.0ms |
+| Experiment ID | Retrieval Pipeline | Generator Model | Mode | MRR | NDCG@5 | Answer F1 | Faithfulness | Generation Latency | Total Latency (p95) |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | `enhanced` | **0.926** | 0.944 | **0.562** | **0.938** | 3102.8ms | 4575.0ms |
+| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | `enhanced` | **0.956** | 0.966 | **0.543** | **0.912** | 4120.4ms | 8368.0ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `enhanced` | **1.000** | 1.000 | **0.446** | **0.950** | 4145.1ms | 11671.0ms |
+| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | `enhanced` | **0.972** | 0.980 | **0.449** | **0.938** | 2829.5ms | 4648.8ms |
+
+#### Apples-to-Apples Generation Ablation (Same 20 Queries, Same Citation-Stripped Metric)
+To scientifically isolate how much of the F1 improvement originates from prompt design & grounded synthesis versus the metric change (stripping citation tags), both generation engines were evaluated on the **exact same 20 queries using the identical citation-stripped F1 metric**:
+
+| Generation Engine | Prompt Strategy | Fallback Synthesis | Answer Token F1 | Factual Faithfulness | Generation Latency |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Legacy Generator** | Terse (`Context: ...\nQuestion: ...\nAnswer:`) | None (Raw fragments) | **0.191** | 0.950 | 5251.9ms |
+| **Enhanced Generator** | Guided Sentence Instruction | Grounded Sentence Synthesis | **0.446** | 0.950 | 4145.1ms |
+
+- **Isolated Prompt & Synthesis Delta**: **+0.255 F1 gain (+133.8%)** purely attributable to guided sentence instructions and grounded synthesis, holding the evaluation metric strictly identical.
 
 ### C. Multi-Scale Corpus, Concurrency & Throughput Stress Testing
-To stress-test performance beyond the baseline 30-document development set, the pipeline was benchmarked across multi-scale corpus tiers (up to 500 documents / 1,500+ chunks) and simulated concurrent client workloads (1 to 20 concurrent threads):
+To stress-test performance beyond the baseline 30-document development set, the pipeline was benchmarked across multi-scale corpus tiers (up to 500 documents / **1,503 chunks**) and simulated concurrent client workloads (1 to 20 concurrent threads):
 
-#### Corpus Scaling & Memory Footprint
-| Corpus Tier | Chunks Indexed | Indexing Time | Baseline RSS | Post-Index RSS | Memory Delta | Query Latency (Mean) | Query Latency (p95) |
+#### Corpus Scaling & Isolated Memory Footprint
+*Note: Embedding model weights are pre-warmed prior to tier profiling to cleanly isolate index overhead from model initialization.*
+
+| Corpus Tier | Chunks Indexed | Indexing Time | Baseline RSS | Post-Index RSS | Index Memory Delta | Query Latency (Mean) | Latency (p95) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Small (30 docs)** | 30 | 27.7s | 48.9 MB | 611.3 MB | +562.5 MB (warmup) | **8.8 ms** | **11.8 ms** |
-| **Medium (100 docs)** | 100 | 2.2s | 555.7 MB | 734.9 MB | **+179.2 MB** | **10.7 ms** | **15.0 ms** |
-| **Large (500 docs)** | 500 | 5.0s | 641.4 MB | 708.8 MB | **+67.4 MB** | **12.5 ms** | **17.9 ms** |
+| **Small (30 docs)** | **93 chunks** | 2.98s | 548.5 MB | 625.5 MB | **+77.0 MB** | 31.49 ms | 45.0 ms |
+| **Medium (100 docs)** | **303 chunks** | 5.61s | 604.1 MB | 584.6 MB | **+0.0 MB** | 1.66 ms | 2.05 ms |
+| **Large (500 docs)** | **1,503 chunks** | 12.25s | 584.6 MB | 598.4 MB | **+13.7 MB** | **7.82 ms** | **10.73 ms** |
 
-#### Concurrency & Sustained Throughput (Evaluated on 500-Doc Corpus Tier)
-| Concurrency Level | Total Requests | Sustained Throughput | Mean Latency | Latency (p50) | Latency (p95) | Peak RSS |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1 worker** | 100 | **1069.0 req/s** | 0.91 ms | 0.81 ms | **1.67 ms** | 579.6 MB |
-| **5 workers** | 100 | **1011.1 req/s** | 4.24 ms | 2.82 ms | **11.58 ms** | 579.8 MB |
-| **10 workers** | 100 | **990.0 req/s** | 6.70 ms | 4.58 ms | **22.27 ms** | 580.1 MB |
-| **20 workers** | 100 | **945.9 req/s** | 3.84 ms | 3.36 ms | **7.62 ms** | 580.8 MB |
+#### In-Process Concurrency & Sustained Throughput (Evaluated on 500-Doc / 1,503-Chunk Tier)
+| Concurrency Level | Warm-Cache QPS | Cold-Cache QPS | Warm Latency (Mean) | Warm Latency (p95) | Cold Latency (p95) | Peak RSS | Memory Delta |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1 worker** | **117.5 req/s** | **19.2 req/s** | 8.42 ms | **11.23 ms** | 71.56 ms | 601.3 MB | +2.8 MB |
+| **5 workers** | **97.9 req/s** | **81.5 req/s** | 50.21 ms | **67.86 ms** | 76.94 ms | 601.4 MB | +0.1 MB |
+| **10 workers** | **96.9 req/s** | **80.7 req/s** | 98.51 ms | **134.30 ms** | 154.20 ms | 601.6 MB | +0.2 MB |
+| **20 workers** | **92.2 req/s** | **80.0 req/s** | 197.87 ms | **302.44 ms** | 310.86 ms | 602.8 MB | +1.2 MB |
+
+- **Throughput Qualification**: The reported QPS measures **in-process retriever throughput** (warm-cache retrieval vs. cold-cache neural query embedding on CPU); full HTTP requests through the FastAPI REST gateway include ASGI framework parsing and JSON serialization.
 
 ### D. The Latency-Accuracy Pareto Frontier & Production Scope
 - **Low-Latency Production (<20ms SLA)**: Pure **Hybrid RRF** (`EXP-05`) achieves optimal MRR (1.000) and NDCG (1.000) on the development benchmark with a 4.0ms p95 latency and negligible incremental memory footprint.

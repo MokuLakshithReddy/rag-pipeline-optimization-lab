@@ -39,7 +39,8 @@ class LLMGenerator(BaseGenerator):
         temperature: float = 0.0,
         abstention_threshold: float = 0.15,
         abstention_message: str = "I do not have sufficient information in the provided context to answer this question.",
-        device: str = "cpu"
+        device: str = "cpu",
+        generation_mode: str = "enhanced"
     ):
         # Determine provider from argument or environment
         chosen_provider = provider or os.getenv("LLM_PROVIDER")
@@ -58,6 +59,7 @@ class LLMGenerator(BaseGenerator):
         )
 
         self.device = device
+        self.generation_mode = os.getenv("GENERATION_MODE", generation_mode).lower().strip()
         if model_name:
             self.model_name = model_name
         elif self.provider == "gemini":
@@ -141,7 +143,9 @@ class LLMGenerator(BaseGenerator):
         if self._local_model is None or self._local_tokenizer is None:
             return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
-        if self._is_seq2seq:
+        if self.generation_mode == "legacy":
+            prompt = f"Context: {context[:1500]}\nQuestion: {query}\nAnswer based on context:"
+        elif self._is_seq2seq:
             prompt = (
                 f"Context: {context[:2000]}\n\n"
                 f"Based on the context above, write a sentence answering the question:\n"
@@ -173,24 +177,25 @@ class LLMGenerator(BaseGenerator):
                 input_len = inputs["input_ids"].shape[1]
                 raw_answer = self._local_tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
 
-            # Clean and enhance answer quality:
+            # Clean and enhance answer quality in enhanced mode:
             # If the neural model outputs an ultra-short fragment (< 4 words), extract the most complete
             # grounded sentence from the context that contains the model's generated entity/phrase.
-            words = raw_answer.split()
-            if 0 < len(words) < 4:
-                sentences = re.split(r'(?<=[.!?])\s+', context)
-                matched = False
-                for s in sentences:
-                    if raw_answer.lower() in s.lower():
-                        raw_answer = s.strip()
-                        matched = True
-                        break
-                if not matched and retrieved_chunks:
+            if self.generation_mode != "legacy":
+                words = raw_answer.split()
+                if 0 < len(words) < 4:
+                    sentences = re.split(r'(?<=[.!?])\s+', context)
+                    matched = False
+                    for s in sentences:
+                        if raw_answer.lower() in s.lower():
+                            raw_answer = s.strip()
+                            matched = True
+                            break
+                    if not matched and retrieved_chunks:
+                        extractive_resp = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
+                        raw_answer = re.sub(r'\[Source[^\]]*\]', '', extractive_resp.answer).strip()
+                elif len(raw_answer) == 0 and retrieved_chunks:
                     extractive_resp = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
                     raw_answer = re.sub(r'\[Source[^\]]*\]', '', extractive_resp.answer).strip()
-            elif len(raw_answer) == 0 and retrieved_chunks:
-                extractive_resp = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
-                raw_answer = re.sub(r'\[Source[^\]]*\]', '', extractive_resp.answer).strip()
 
             # Grounding and citation appendage
             source_tag = f" [Source 1: {citations[0].source}]" if citations else ""

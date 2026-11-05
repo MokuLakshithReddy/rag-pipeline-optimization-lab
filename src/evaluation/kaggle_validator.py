@@ -272,28 +272,33 @@ class KaggleSubmissionValidator:
                 if t_id_col:
                     break
 
-            if t_id_col:
-                expected_ids = set(test_df[t_id_col].astype(str))
+            if not t_id_col:
+                raise KaggleValidationError(
+                    f"Could not identify a valid query ID column in the provided test set '{test_set_path}'. "
+                    f"Expected one of {list(self.ID_COLUMNS)}, found: {list(test_df.columns)}"
+                )
 
-                # Check if ground truth answers are present for evaluation
-                gt_col = None
-                for candidate in ["ground_truth_answer", "ground_truth", "answer", "target"]:
-                    for col in test_df.columns:
-                        if col.lower() == candidate:
-                            gt_col = col
-                            break
-                    if gt_col:
+            expected_ids = set(test_df[t_id_col].astype(str))
+
+            # Check if ground truth answers are present for evaluation
+            gt_col = None
+            for candidate in ["ground_truth_answer", "ground_truth", "answer", "target"]:
+                for col in test_df.columns:
+                    if col.lower() == candidate:
+                        gt_col = col
                         break
-
                 if gt_col:
-                    eval_metrics = self.evaluate_ground_truth(
-                        submission_df=df,
-                        test_df=test_df,
-                        sub_id_col=id_col,
-                        sub_pred_col=pred_col,
-                        test_id_col=t_id_col,
-                        test_gt_col=gt_col
-                    )
+                    break
+
+            if gt_col:
+                eval_metrics = self.evaluate_ground_truth(
+                    submission_df=df,
+                    test_df=test_df,
+                    sub_id_col=id_col,
+                    sub_pred_col=pred_col,
+                    test_id_col=t_id_col,
+                    test_gt_col=gt_col
+                )
 
         integrity_result = self.validate_integrity(
             df=df,
