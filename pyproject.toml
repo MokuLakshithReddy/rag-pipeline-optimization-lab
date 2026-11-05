@@ -45,4 +45,9 @@ addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+markers = [
+    "performance: controlled performance regression benchmarks with SLA targets",
+    "integration: end-to-end integration tests",
+    "security: security audit and validation tests"
+]
 

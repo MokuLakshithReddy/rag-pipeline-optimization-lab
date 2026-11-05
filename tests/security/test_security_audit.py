@@ -81,3 +81,27 @@ def test_security_headers_present():
     assert resp.headers.get("X-Frame-Options") == "DENY"
     assert "X-Request-ID" in resp.headers
 
+
+def test_cors_headers_restrictive():
+    # Pre-flight request from allowed origin
+    resp = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET"
+        }
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    # Pre-flight request from unauthorized origin
+    resp_bad = client.options(
+        "/health",
+        headers={
+            "Origin": "http://malicious-site.com",
+            "Access-Control-Request-Method": "GET"
+        }
+    )
+    assert resp_bad.headers.get("access-control-allow-origin") != "http://malicious-site.com"
+
+

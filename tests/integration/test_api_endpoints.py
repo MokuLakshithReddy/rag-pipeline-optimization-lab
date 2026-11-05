@@ -69,6 +69,15 @@ def test_fail_closed_when_unconfigured(monkeypatch):
     assert "No valid API keys are registered" in resp.json()["detail"]
 
 
+def test_invalid_tenant_id_rejected():
+    """Invalid tenant identifiers in X-Tenant-ID must be rejected with 400 Bad Request."""
+    invalid_tenants = ["../traversal", "tenant/evil", "space in name", "special@char", ""]
+    for inv in invalid_tenants:
+        resp = client.get("/v1/documents", headers={"X-API-Key": "test-key-admin", "X-Tenant-ID": inv})
+        assert resp.status_code == 400
+        assert "Invalid 'X-Tenant-ID' header" in resp.json()["detail"]
+
+
 def test_api_document_upload_and_listing():
     file_content = b"Knowledge Base Document: Docker containers package software and its dependencies."
     files = [("files", ("docker.txt", io.BytesIO(file_content), "text/plain"))]

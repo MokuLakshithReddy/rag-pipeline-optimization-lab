@@ -45,3 +45,12 @@ jobs:
           test -f reports/experiment_summary.md
           test -f reports/retrieval_analysis.md
 
+      - name: Execute Repeatable Performance SLA Benchmark
+        run: |
+          python src/experiments/benchmark_performance.py
+
+      - name: Verify Performance Artifacts
+        run: |
+          test -f reports/performance_sla_report.json
+          test -f reports/performance_sla_report.md
+

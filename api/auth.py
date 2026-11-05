@@ -1,12 +1,13 @@
 """API Authentication and Tenant Context Management.
 
 Provides strict fail-closed authentication, tenant-scoped credential resolution,
-and enforced cross-tenant boundary protections.
+explicit tenant ID format validation, and enforced cross-tenant boundary protections.
 """
 
 from __future__ import annotations
 import logging
 import os
+import re
 import secrets
 from typing import Dict, Optional
 from fastapi import Header, HTTPException, Security, status
@@ -14,6 +15,10 @@ from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredenti
 from pydantic import BaseModel
 
 logger = logging.getLogger("api_auth")
+
+# Strict tenant ID syntax: 1-64 alphanumeric characters, underscores, or hyphens
+TENANT_ID_REGEX = r"^[a-zA-Z0-9_-]{1,64}$"
+TENANT_ID_PATTERN = re.compile(TENANT_ID_REGEX)
 
 
 class TenantContext(BaseModel):
@@ -28,6 +33,22 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def validate_tenant_id(tenant_id: str, context_desc: str = "Tenant ID") -> str:
+    """Validate tenant ID against strict character set and length constraints.
+    
+    Rejects rather than silently transforms invalid values to prevent ambiguous
+    storage namespace collisions and directory traversal attacks.
+    """
+    if not tenant_id or not isinstance(tenant_id, str):
+        raise ValueError(f"{context_desc} cannot be empty.")
+    stripped = tenant_id.strip()
+    if not TENANT_ID_PATTERN.match(stripped):
+        raise ValueError(
+            f"Invalid {context_desc} '{tenant_id}': Must be 1-64 characters matching pattern '{TENANT_ID_REGEX}'."
+        )
+    return stripped
+
+
 def get_configured_api_keys() -> Dict[str, str]:
     """Retrieve mapping of valid API keys to tenant IDs.
     
@@ -37,6 +58,7 @@ def get_configured_api_keys() -> Dict[str, str]:
       API_KEY="my-secret-key" (binds strictly to 'default' tenant)
     
     If neither API_KEYS nor API_KEY is set in environment, returns empty dict (fail-closed).
+    Raises ValueError during configuration validation if any tenant identifier is invalid.
     """
     keys_env = os.getenv("API_KEYS", "")
     single_key = os.getenv("API_KEY", "")
@@ -46,8 +68,11 @@ def get_configured_api_keys() -> Dict[str, str]:
         for pair in keys_env.split(","):
             if ":" in pair:
                 k, t = pair.split(":", 1)
-                if k.strip() and t.strip():
-                    key_mapping[k.strip()] = t.strip()
+                k_clean = k.strip()
+                t_clean = t.strip()
+                if k_clean and t_clean:
+                    validate_tenant_id(t_clean, context_desc="configured tenant ID in API_KEYS")
+                    key_mapping[k_clean] = t_clean
             elif pair.strip():
                 key_mapping[pair.strip()] = "default"
     elif single_key.strip():
@@ -70,6 +95,8 @@ async def get_current_tenant(
        tenant via 'X-Tenant-ID' receive HTTP 403 Forbidden.
     4. Administrative Privileges: Cross-tenant switching is exclusively permitted for
        keys explicitly mapped to the 'admin' role.
+    5. Explicit Rejection of Invalid Tenant IDs: Rejects malformed tenant identifiers
+       with HTTP 400 Bad Request instead of silently transforming them.
     """
     token = api_key or (bearer.credentials if bearer else None)
     valid_keys = get_configured_api_keys()
@@ -112,8 +139,16 @@ async def get_current_tenant(
     # 4. Strict Role & Cross-Tenant Boundary Enforcement
     is_admin = (matched_tenant == "admin")
 
-    if x_tenant_id and x_tenant_id.strip():
+    if x_tenant_id is not None:
         requested_tenant = x_tenant_id.strip()
+        # Explicit validation: Reject invalid characters immediately (fail fast)
+        if not TENANT_ID_PATTERN.match(requested_tenant):
+            logger.warning(f"Rejected invalid tenant ID in X-Tenant-ID header: '{x_tenant_id}'")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid 'X-Tenant-ID' header '{x_tenant_id}': Tenant identifiers must be 1-64 characters matching pattern '{TENANT_ID_REGEX}'."
+            )
+
         if is_admin:
             # Administrators are explicitly authorized to switch tenant workspaces
             active_tenant = requested_tenant
@@ -133,13 +168,8 @@ async def get_current_tenant(
     else:
         active_tenant = matched_tenant
 
-    # 5. Sanitize tenant identifier to prevent directory traversal
-    safe_tenant_id = "".join(c for c in active_tenant if c.isalnum() or c in {"-", "_"}).strip()
-    if not safe_tenant_id:
-        safe_tenant_id = "default"
-
     return TenantContext(
-        tenant_id=safe_tenant_id,
-        user_id=f"user-{safe_tenant_id}",
+        tenant_id=active_tenant,
+        user_id=f"user-{active_tenant}",
         is_admin=is_admin
     )

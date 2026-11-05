@@ -57,14 +57,31 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Security: Restrictive CORS configuration
-allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8501")
-allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+# Security: Restrictive CORS configuration with strict fail-fast validation
+app_env = os.getenv("APP_ENV", "development").lower()
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+
+if allowed_origins_env.strip():
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+elif app_env in {"production", "prod"}:
+    raise RuntimeError(
+        "Production configuration error: ALLOWED_ORIGINS must be explicitly configured "
+        "with a non-empty, comma-separated list of permitted origins in production."
+    )
+else:
+    # Default explicit development origins (never wildcard with credentials)
+    allowed_origins = ["http://localhost:3000", "http://localhost:8501", "http://127.0.0.1:8501"]
+
+# Enforce browser security standard: wildcard origins are incompatible with credentials
+allow_credentials = True
+if "*" in allowed_origins:
+    logger.warning("CORS configuration contains wildcard '*'. Disabling allow_credentials to comply with browser standards.")
+    allow_credentials = False
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
