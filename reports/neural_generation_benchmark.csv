@@ -1,5 +1,5 @@
 experiment_id,timestamp,pipeline_name,generator_provider,generator_model,nli_evaluator_mode,mrr,ndcg_at_k,hit_at_k,answer_token_f1,factual_faithfulness,retrieval_latency_ms,rerank_latency_ms,generation_latency_ms,total_latency_mean_ms,latency_p95_ms
-NEURAL-01-Dense-Generation,2026-11-05T03:21:39.352661+00:00,Dense (all-MiniLM-L6-v2) + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9259,0.9444,1.0,0.2144,1.0,11.06,0.0,764.12,775.52,1445.02
-NEURAL-02-Sparse-Generation,2026-11-05T03:21:53.528716+00:00,Sparse (BM25) + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9556,0.9659,1.0,0.1234,0.975,0.22,0.0,701.01,701.56,1916.3
-NEURAL-03-Hybrid-RRF-Generation,2026-11-05T03:22:08.542421+00:00,Hybrid RRF + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,1.0,1.0,1.0,0.172,0.95,0.41,0.0,742.88,743.63,1403.35
-NEURAL-04-Hybrid-Reranked-Generation,2026-11-05T03:22:24.620656+00:00,Hybrid RRF + Cross-Encoder + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9722,0.9795,1.0,0.1746,1.0,0.37,168.58,627.98,797.21,1445.09
+NEURAL-01-Dense-Generation,2026-11-05T04:38:56.190512+00:00,Dense (all-MiniLM-L6-v2) + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9259,0.9444,1.0,0.562,0.9375,13.24,0.0,1024.61,1038.35,1546.81
+NEURAL-02-Sparse-Generation,2026-11-05T04:39:21.613712+00:00,Sparse (BM25) + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9556,0.9659,1.0,0.5431,0.9125,0.25,0.0,1263.3,1264.02,2211.23
+NEURAL-03-Hybrid-RRF-Generation,2026-11-05T04:39:45.989043+00:00,Hybrid RRF + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,1.0,1.0,1.0,0.4461,0.95,0.48,0.0,1209.27,1210.24,1987.49
+NEURAL-04-Hybrid-Reranked-Generation,2026-11-05T04:40:17.006516+00:00,Hybrid RRF + Cross-Encoder + Neural LLM,local,google/flan-t5-small,heuristic_claim_verifier,0.9722,0.9795,1.0,0.4489,0.9375,0.45,188.21,1353.61,1542.66,3199.99

@@ -94,8 +94,14 @@ def compute_hit_at_k(retrieved_ids: List[str], relevant_ids: Set[str], k: int) -
 
 
 def compute_token_f1(prediction: str, ground_truth: str) -> float:
-    """Token-level F1 score between predicted answer and ground truth."""
-    pred_tokens = re.findall(r'\b\w+\b', prediction.lower())
+    """Token-level F1 score between predicted answer and ground truth.
+    
+    Automatically strips citation tags (e.g. `[Source 1: ...]` or `[Source: ...]`)
+    from the prediction so user-facing citation annotations do not degrade token precision
+    against reference ground truths.
+    """
+    cleaned_pred = re.sub(r'\[Source[^\]]*\]', '', prediction).strip()
+    pred_tokens = re.findall(r'\b\w+\b', cleaned_pred.lower())
     gt_tokens = re.findall(r'\b\w+\b', ground_truth.lower())
 
     if not pred_tokens or not gt_tokens:

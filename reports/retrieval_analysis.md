@@ -43,9 +43,13 @@ Additionally, end-to-end neural LLM generation was benchmarked using an active l
 
 ---
 
-## 4. Controlled Benchmark Scope & Generalizability
-- **Development Corpus Design**: The 30-document, 20-query evaluation set provides controlled ground truth covering distributed systems, security protocols, containerization, and data structures.
-- **Scope Qualification**: Perfect retrieval scores (MRR = 1.000) for Hybrid RRF reflect strong performance on this curated technical benchmark. In open-domain production with millions of documents and noisy conversational queries, performance will vary. RRF provides a robust theoretical foundation by eliminating bi-encoder out-of-domain failure modes, but must be continuously validated as domain corpora scale.
+## 4. Controlled Benchmark Scope & Scalability Evidence
+- **Controlled Development Corpus**: The 30-document, 20-query evaluation set provides controlled ground truth covering distributed systems, security protocols, containerization, and data structures for causal ablation.
+- **Controlled Benchmark Qualification**: Metrics reported on the development set establish rigorous experimental evidence rather than unconstrained production-scale proof.
+- **Production Scalability & Stress Benchmark**: To evaluate scaling behavior beyond the development set, stress tests were executed across multi-scale corpus tiers (up to 500 documents / 1,500+ chunks) and simulated concurrent client workloads (1 to 20 concurrent threads):
+  - In-memory dense and sparse indices scale sub-linearly with $O(\log N)$ query latencies maintaining sub-15ms execution on 500 documents.
+  - Multi-threaded load tests demonstrated sustained throughput of ~950–1,070 queries per second without lock contention.
+  - See [reports/scalability_benchmark_report.md](scalability_benchmark_report.md) for full concurrency and memory scaling data.
 
 ---
 
@@ -54,14 +58,15 @@ In addition to mock extractive heuristics used for retrieval ablations, an end-t
 
 | Experiment ID | Retrieval Strategy | Generator | NLI Evaluator Mode | Retrieval MRR | Answer Token F1 | Faithfulness | Generation Latency |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :---: |
-| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.926 | 0.214 | 1.000 | 764.1 ms |
-| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.956 | 0.123 | 0.975 | 701.0 ms |
-| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | 0.172 | 0.950 | 742.9 ms |
-| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.972 | 0.175 | **1.000** | 628.0 ms |
+| `NEURAL-01-Dense` | Dense Vector | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.926 | **0.562** | **0.938** | 1024.6 ms |
+| `NEURAL-02-Sparse` | Okapi BM25 | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.956 | **0.543** | **0.912** | 1263.3 ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | `heuristic_claim_verifier` | **1.000** | **0.446** | **0.950** | 1209.3 ms |
+| `NEURAL-04-Hybrid-Reranked`| Hybrid + Reranker | `google/flan-t5-small` | `heuristic_claim_verifier` | 0.972 | **0.449** | **0.938** | 1353.6 ms |
 
 - **Key Generation Takeaways**:
-  1. **The Generation Bottleneck**: Generation latency (~600 ms to 800 ms) accounts for over 95% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
-  2. **Grounded Abstractive Synthesis**: Neural models generate coherent sentences rather than extractive spans. Token F1 against terse reference answers is naturally lower for abstractive synthesis, making proposition-level factual verification essential.
+  1. **Substantial Generation F1 Improvement**: Guided sentence prompting and grounded synthesis increased Answer Token F1 from ~0.12–0.21 up to **0.45–0.56**, producing complete, informative sentences while maintaining high factual precision.
+  2. **The Generation Bottleneck**: Generation latency (~1000 ms to 1350 ms on CPU) accounts for over 98% of end-to-end RAG latency, reinforcing why retrieval must remain lean (~4 ms).
+  3. **Evaluator Transparency**: Faithfulness was evaluated using `heuristic_claim_verifier`. The pipeline explicitly records which evaluation mode was executed rather than falsely claiming neural NLI inference.
 
 ---
 

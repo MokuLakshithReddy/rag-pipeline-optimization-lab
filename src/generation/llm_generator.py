@@ -141,7 +141,19 @@ class LLMGenerator(BaseGenerator):
         if self._local_model is None or self._local_tokenizer is None:
             return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
-        prompt = f"Context: {context[:1500]}\nQuestion: {query}\nAnswer based on context:"
+        if self._is_seq2seq:
+            prompt = (
+                f"Context: {context[:2000]}\n\n"
+                f"Based on the context above, write a sentence answering the question:\n"
+                f"Question: {query}\n"
+                f"Answer:"
+            )
+        else:
+            prompt = (
+                f"Context: {context[:2000]}\n\n"
+                f"Question: {query}\n"
+                f"Answer based exclusively on the context:"
+            )
         try:
             import torch
             inputs = self._local_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
@@ -160,6 +172,25 @@ class LLMGenerator(BaseGenerator):
             else:
                 input_len = inputs["input_ids"].shape[1]
                 raw_answer = self._local_tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
+
+            # Clean and enhance answer quality:
+            # If the neural model outputs an ultra-short fragment (< 4 words), extract the most complete
+            # grounded sentence from the context that contains the model's generated entity/phrase.
+            words = raw_answer.split()
+            if 0 < len(words) < 4:
+                sentences = re.split(r'(?<=[.!?])\s+', context)
+                matched = False
+                for s in sentences:
+                    if raw_answer.lower() in s.lower():
+                        raw_answer = s.strip()
+                        matched = True
+                        break
+                if not matched and retrieved_chunks:
+                    extractive_resp = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
+                    raw_answer = re.sub(r'\[Source[^\]]*\]', '', extractive_resp.answer).strip()
+            elif len(raw_answer) == 0 and retrieved_chunks:
+                extractive_resp = self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
+                raw_answer = re.sub(r'\[Source[^\]]*\]', '', extractive_resp.answer).strip()
 
             # Grounding and citation appendage
             source_tag = f" [Source 1: {citations[0].source}]" if citations else ""

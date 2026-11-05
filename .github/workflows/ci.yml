@@ -49,10 +49,16 @@ jobs:
         run: |
           python src/experiments/benchmark_performance.py
 
+      - name: Execute Scalability & Concurrency Benchmark
+        run: |
+          python src/experiments/benchmark_scalability.py --corpus-tiers 30 100 --concurrency-levels 1 5 10
+
       - name: Verify Performance Artifacts
         run: |
           test -f reports/performance_sla_report.json
           test -f reports/performance_sla_report.md
+          test -f reports/scalability_benchmark_report.json
+          test -f reports/scalability_benchmark_report.md
 
       - name: Upload Benchmark & SLA Reports
         uses: actions/upload-artifact@v4
@@ -67,5 +73,7 @@ jobs:
             reports/performance_sla_report.md
             reports/neural_generation_benchmark.csv
             reports/neural_generation_summary.md
+            reports/scalability_benchmark_report.json
+            reports/scalability_benchmark_report.md
           retention-days: 30
 
