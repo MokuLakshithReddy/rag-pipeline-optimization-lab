@@ -1,0 +1,51 @@
+question_id,question
+q01,What is the minimum facial similarity threshold required during ID verification in ProctorIQ?
+q02,What happens if candidate facial verification fails after three consecutive attempts?
+q03,What must a candidate do during the pre-exam 360-degree environment room scan?
+q04,Which unauthorized items does the AI model scan for during the pre-exam room check?
+q05,What audio sampling rate does ProctorIQ use for microphone recording?
+q06,What decibel level and duration triggers an ambient noise violation in ProctorIQ?
+q07,How does ProctorIQ distinguish human speech from mechanical noise like fans?
+q08,What action does ProctorIQ take if whispered conversations or multiple voices are detected?
+q09,Which neural network architecture separates multiple speaker voices in ProctorIQ?
+q10,Which keyboard shortcuts are disabled by the ProctorIQ Secure Browser?
+q11,How does ProctorIQ prevent copy-pasting between external applications and exam fields?
+q12,What specific error code is raised if virtualization software is detected on the candidate machine?
+q13,Name four virtualization or remote access software programs blocked by ProctorIQ.
+q14,How does ProctorIQ detect if an external secondary monitor is plugged into the system?
+q15,What happens to the exam display if a secondary monitor is detected during the exam?
+q16,What is the frame rate and video encoding standard used for screen capture in ProctorIQ?
+q17,How does ProctorIQ deter candidates from taking photographs of the screen?
+q18,What duration of gaze diversion outside monitor bounds triggers a Medium Severity flag?
+q19,What occurs if a candidate maintains persistent downward gaze toward lap level?
+q20,What confidence threshold is required by computer vision models to flag unauthorized objects?
+q21,Which physical items are detected by the edge computer vision models in ProctorIQ?
+q22,What is the duration of the ProctorIQ network disconnection grace period?
+q23,Where are exam answers and video chunks cached during an internet outage?
+q24,What occurs if internet connectivity is not restored within the 10-minute grace window?
+q25,How does ProctorIQ synchronize data when connectivity resumes within the grace period?
+q26,What constitutes a Low Severity infraction in ProctorIQ?
+q27,Give two examples of events classified as Medium Severity infractions.
+q28,Which infractions are immediately categorized as High Severity in ProctorIQ?
+q29,How many Medium severity infractions trigger exam session suspension?
+q30,What automated proctor intervention occurs when a Medium severity flag is raised?
+q31,What are the minimum RAM and operating system requirements for ProctorIQ?
+q32,What is the minimum processor speed required to run ProctorIQ?
+q33,What webcam resolution and frame rate does ProctorIQ require?
+q34,What is the minimum broadband upload bandwidth needed for testing in ProctorIQ?
+q35,How much free disk space is required to install and run the ProctorIQ application?
+q36,Which encryption protocol secures ProctorIQ audio and video data in transit?
+q37,What encryption algorithm and key management system protects candidate recordings at rest?
+q38,Which student privacy and data protection regulations does ProctorIQ comply with?
+q39,How long does ProctorIQ retain candidate biometric templates before purging them?
+q40,Which popular screen readers are supported by ProctorIQ for visually impaired candidates?
+q41,What timing extensions can be configured for candidates with approved accommodations?
+q42,How does ProctorIQ prevent false positive gaze violations for candidates with ergonomic movement accommodations?
+q43,Where are candidate accessibility accommodations officially managed and configured?
+q44,How many concurrent candidates can a single human proctor supervise on the ProctorIQ dashboard?
+q45,What live intervention tools are available to a human proctor during an active session?
+q46,"Can a live proctor pause a student exam timer, and under what circumstances?"
+q47,What protocol is used if a candidate attempts to communicate with someone off-camera?
+q48,Compare the consequences of a single High severity infraction versus three Medium severity infractions in ProctorIQ.
+q49,How do offline IndexedDB caching and AES-256 encryption work together during network loss in ProctorIQ?
+q50,Why does ProctorIQ tile steganographic watermarks and restrict secondary displays simultaneously?

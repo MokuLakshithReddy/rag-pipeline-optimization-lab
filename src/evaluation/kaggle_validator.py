@@ -39,18 +39,24 @@ class KaggleSubmissionValidator:
 
     # Recognized column mappings for Kaggle test and submission sets
     ID_COLUMNS = {"query_id", "id", "qid", "question_id"}
-    PRED_COLUMNS = {"prediction", "answer", "predicted_answer", "response", "generated_answer"}
-    CONTEXT_COLUMNS = {"retrieved_context", "context", "retrieved_chunks", "citations", "documents"}
+    PRED_COLUMNS = {"prediction", "answer", "predicted_answer", "response", "generated_answer", "answer_text"}
+    CONTEXT_COLUMNS = {"retrieved_context", "context", "retrieved_chunks", "citations", "documents", "cited_docs", "cited_sections"}
+
+    # Official NxtWave Competition schema
+    OFFICIAL_COMPETITION_COLUMNS = ["question_id", "answer_text", "cited_docs", "cited_sections"]
+    OFFICIAL_ROW_COUNT = 50
 
     def __init__(
         self,
         allow_empty_predictions: bool = False,
         min_prediction_chars: int = 3,
-        max_prediction_chars: int = 10000
+        max_prediction_chars: int = 10000,
+        strict_competition: bool = False
     ):
         self.allow_empty_predictions = allow_empty_predictions
         self.min_prediction_chars = min_prediction_chars
         self.max_prediction_chars = max_prediction_chars
+        self.strict_competition = strict_competition
 
     def load_submission(self, submission_path: str | Path) -> pd.DataFrame:
         """Load submission from CSV, TSV, or Parquet with strict format checks."""
@@ -185,6 +191,43 @@ class KaggleSubmissionValidator:
                     f"Row count mismatch: submission contains {len(submitted_ids)} unique queries, "
                     f"expected {len(expected_ids)}"
                 )
+
+        # 6. Official Competition Strict Verification Mode
+        if self.strict_competition:
+            # Check exact column names
+            actual_cols = [c.strip().lower() for c in df.columns]
+            for req_col in self.OFFICIAL_COMPETITION_COLUMNS:
+                if req_col not in actual_cols:
+                    errors.append(
+                        f"Competition strict schema violation: missing mandatory column '{req_col}'. "
+                        f"Required columns: {self.OFFICIAL_COMPETITION_COLUMNS}, found: {list(df.columns)}"
+                    )
+
+            # Check exact row count (must be exactly 50)
+            if total_rows != self.OFFICIAL_ROW_COUNT and expected_ids is None:
+                errors.append(
+                    f"Competition strict rule violation: submission must contain exactly {self.OFFICIAL_ROW_COUNT} rows, "
+                    f"found {total_rows} rows."
+                )
+
+            # Check citation columns integrity
+            for col_name in ["cited_docs", "cited_sections"]:
+                matched_col = None
+                for c in df.columns:
+                    if c.strip().lower() == col_name:
+                        matched_col = c
+                        break
+                if matched_col:
+                    null_cites = df[matched_col].isna().sum()
+                    if null_cites > 0:
+                        errors.append(
+                            f"Competition citation violation: found {null_cites} null values in '{matched_col}'"
+                        )
+                    empty_cites = (df[matched_col].astype(str).str.strip() == "").sum()
+                    if empty_cites > 0:
+                        errors.append(
+                            f"Competition citation violation: found {empty_cites} empty values in '{matched_col}'"
+                        )
 
         if errors:
             raise KaggleValidationError("; ".join(errors))
@@ -323,9 +366,14 @@ if __name__ == "__main__":
     parser.add_argument("--submission", required=True, help="Path to submission file (.csv, .tsv, .parquet)")
     parser.add_argument("--test-set", default=None, help="Path to competition test set or ground truth")
     parser.add_argument("--output-json", default=None, help="Optional path to output validation JSON")
+    parser.add_argument(
+        "--strict-competition",
+        action="store_true",
+        help="Enforce official Gen AI Project 4 Kaggle competition rules (exact 50 rows and schema)"
+    )
     args = parser.parse_args()
 
-    validator = KaggleSubmissionValidator()
+    validator = KaggleSubmissionValidator(strict_competition=args.strict_competition)
     try:
         report = validator.validate(args.submission, args.test_set)
         print("\n=== KAGGLE SUBMISSION VALIDATION PASSED ===")

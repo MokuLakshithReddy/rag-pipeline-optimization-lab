@@ -1,0 +1,51 @@
+question_id,answer_text,cited_docs,cited_sections
+q01,ProctorIQ requires a minimum 95% facial similarity threshold during automated identity matching against the ID photo.,proctoriq_candidate_verification.md,Section 1.0: Identity Verification Protocols
+q02,The session triggers a Tier-2 manual proctor override for human verification.,proctoriq_candidate_verification.md,Section 1.0: Identity Verification Protocols
+q03,"The candidate must rotate their webcam across the entire workspace, including beneath the desk and behind monitors.",proctoriq_candidate_verification.md,Section 1.1: 360-Degree Room Scan Requirements
+q04,"Unauthorized second screens, mobile phones, or additional individuals.",proctoriq_candidate_verification.md,Section 1.1: 360-Degree Room Scan Requirements
+q05,ProctorIQ continuously samples candidate microphone audio at 44.1 kHz.,proctoriq_audio_monitoring.md,Section 2.0: Ambient Noise & Audio Thresholds
+q06,Background noise exceeding 65 dB for more than 3 consecutive seconds is flagged as a potential acoustic violation.,proctoriq_audio_monitoring.md,Section 2.0: Ambient Noise & Audio Thresholds
+q07,Advanced acoustic models isolate vocal speech frequencies from background mechanical hums like air conditioning or fan noise.,proctoriq_audio_monitoring.md,Section 2.0: Ambient Noise & Audio Thresholds
+q08,"An immediate High Severity alert is dispatched to the dashboard, and an audio snippet is cryptographically hashed for post-exam review.",proctoriq_audio_monitoring.md,Section 2.1: Multi-Speaker & Whisper Detection
+q09,Diarization neural networks are employed to separate multiple speaker voices.,proctoriq_audio_monitoring.md,Section 2.1: Multi-Speaker & Whisper Detection
+q10,"Operating system shortcut keys including Alt-Tab, Windows Key, Cmd-Tab, PrintScreen, and function keys are disabled.",proctoriq_browser_lockdown.md,Section 3.0: Secure Browser Sandboxing
+q11,Clipboard history is cleared upon launch and copy-paste operations between external applications and exam fields are strictly blocked.,proctoriq_browser_lockdown.md,Section 3.0: Secure Browser Sandboxing
+q12,ProctorIQ halts exam launch with error code PROCTOR-VM-BLOCKED.,proctoriq_browser_lockdown.md,Section 3.1: Virtual Machine & Remote Desktop Blocking
+q13,"VMware, VirtualBox, QEMU, Hyper-V, AnyDesk, TeamViewer, or Remote Desktop Protocol (RDP).",proctoriq_browser_lockdown.md,Section 3.1: Virtual Machine & Remote Desktop Blocking
+q14,The browser queries the OS display manager via EDID to detect external displays or capture cards.,proctoriq_screen_recording.md,Section 4.0: Display Isolation & Multi-Monitor Detection
+q15,The exam screen blanks out until the auxiliary display cable is physically disconnected.,proctoriq_screen_recording.md,Section 4.0: Display Isolation & Multi-Monitor Detection
+q16,Display frame buffers are captured at 5 frames per second using hardware-accelerated H.264 encoding.,proctoriq_screen_recording.md,Section 4.1: Screen Capture & Watermarking
+q17,An invisible steganographic watermark containing candidate ID and timestamp is dynamically tiled across the test window.,proctoriq_screen_recording.md,Section 4.1: Screen Capture & Watermarking
+q18,Looking away from central monitor bounds for more than 5 cumulative seconds within a 60-second window triggers a Medium Severity flag.,proctoriq_anomaly_detection.md,Section 5.0: Gaze Tracking & Head Pose Estimation
+q19,Persistent downward gaze towards lap level triggers an immediate inspection request.,proctoriq_anomaly_detection.md,Section 5.0: Gaze Tracking & Head Pose Estimation
+q20,Bounding boxes for unauthorized objects require confidence thresholds calibrated to 0.85.,proctoriq_anomaly_detection.md,Section 5.1: Object Detection in Video Stream
+q21,"Smartphones, smartwatches, textbooks, earphones, and Bluetooth earbuds.",proctoriq_anomaly_detection.md,Section 5.1: Object Detection in Video Stream
+q22,ProctorIQ activates an automated 10-minute network grace period during network failures.,proctoriq_network_resilience.md,Section 6.0: Disconnection Grace Period & Offline Caching
+q23,Telemetry logs and video chunks are encrypted with AES-256 and cached locally in browser IndexedDB storage.,proctoriq_network_resilience.md,Section 6.0: Disconnection Grace Period & Offline Caching
+q24,The exam session auto-submits current answers to preserve partial credit.,proctoriq_network_resilience.md,Section 6.1: Automatic Session Resumption
+q25,ProctorIQ synchronizes cached answers and transmits backlogged telemetry to the server.,proctoriq_network_resilience.md,Section 6.1: Automatic Session Resumption
+q26,Low Severity events include temporary gaze drift or brief ambient noise spikes under 3 seconds.,proctoriq_infraction_severity.md,Section 7.0: Three-Tier Infraction Classification
+q27,Persistent gaze away from the screen for more than 5 seconds and secondary background voices.,proctoriq_infraction_severity.md,Section 7.0: Three-Tier Infraction Classification
+q28,"An unauthorized person entering the room, smartphone detected, VM detected, or secondary monitor connected.",proctoriq_infraction_severity.md,Section 7.0: Three-Tier Infraction Classification
+q29,Accumulation of three Medium severity infractions escalates to session suspension pending live proctor review.,proctoriq_infraction_severity.md,Section 7.1: Proctor Intervention & Disqualification Matrix
+q30,Medium severity flags dispatch a two-way text prompt from the proctor.,proctoriq_infraction_severity.md,Section 7.1: Proctor Intervention & Disqualification Matrix
+q31,A 64-bit OS (Windows 10/11 or macOS 12+) and a minimum of 8 GB RAM.,proctoriq_hardware_requirements.md,Section 8.0: Minimum Hardware & Software Specifications
+q32,A dual-core 2.0 GHz processor is required.,proctoriq_hardware_requirements.md,Section 8.0: Minimum Hardware & Software Specifications
+q33,A functional webcam with 720p resolution at 30 frames per second.,proctoriq_hardware_requirements.md,Section 8.0: Minimum Hardware & Software Specifications
+q34,A stable broadband connection with at least 2.0 Mbps upload bandwidth is required.,proctoriq_hardware_requirements.md,Section 8.0: Minimum Hardware & Software Specifications
+q35,At least 500 MB of free disk space is required.,proctoriq_hardware_requirements.md,Section 8.0: Minimum Hardware & Software Specifications
+q36,All data collected by ProctorIQ is encrypted in transit using TLS 1.3.,proctoriq_security_and_compliance.md,Section 9.0: Data Privacy & Cryptographic Retention
+q37,Data at rest is encrypted with AES-256 keys managed in Hardware Security Modules (HSM).,proctoriq_security_and_compliance.md,Section 9.0: Data Privacy & Cryptographic Retention
+q38,ProctorIQ strictly complies with FERPA and GDPR regulations.,proctoriq_security_and_compliance.md,Section 9.0: Data Privacy & Cryptographic Retention
+q39,ProctorIQ automatically purges candidate biometric data 30 days after exam certification.,proctoriq_security_and_compliance.md,Section 9.0: Data Privacy & Cryptographic Retention
+q40,JAWS and NVDA screen readers are fully supported by ProctorIQ.,proctoriq_accessibility_accommodations.md,Section 10.0: Assistive Technology & Accommodations
+q41,Extended testing durations of 1.5x or 2.0x time can be configured.,proctoriq_accessibility_accommodations.md,Section 10.0: Assistive Technology & Accommodations
+q42,Ergonomic movement allowances are configured through the Institutional Admin Portal to suppress false positive gaze flags.,proctoriq_accessibility_accommodations.md,Section 10.0: Assistive Technology & Accommodations
+q43,Accommodations are configured through the Institutional Admin Portal.,proctoriq_accessibility_accommodations.md,Section 10.0: Assistive Technology & Accommodations
+q44,A single human proctor can supervise up to 16 concurrent candidates via the matrix dashboard.,proctoriq_human_proctor_intervention.md,Section 11.0: Real-Time Live Proctor Tools
+q45,"Proctors can send silent warnings, pause exam timers, initiate a live 360 room re-scan, or start secure audio communication.",proctoriq_human_proctor_intervention.md,Section 11.0: Real-Time Live Proctor Tools
+q46,"Yes, proctors can pause exam timers if environmental anomalies or technical checks require investigation.",proctoriq_human_proctor_intervention.md,Section 11.0: Real-Time Live Proctor Tools
+q47,"Multi-speaker audio detection alerts the proctor, who can initiate bidirectional audio and request a 360-degree re-scan.",proctoriq_human_proctor_intervention.md,Section 11.0: Real-Time Live Proctor Tools
+q48,Both a single High severity infraction and the accumulation of three Medium severity infractions escalate to session suspension pending live proctor review.,proctoriq_infraction_severity.md,Section 7.1: Proctor Intervention & Disqualification Matrix
+q49,"During network outages, telemetry and video chunks are encrypted using AES-256 and stored in IndexedDB for up to 10 minutes before auto-submitting.",proctoriq_network_resilience.md,Section 6.0: Disconnection Grace Period & Offline Caching
+q50,Steganographic watermarks deter photographic screen leaks while display isolation prevents HDMI capture cards and multi-monitor cheating.,proctoriq_screen_recording.md,Section 4.1: Screen Capture & Watermarking
