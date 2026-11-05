@@ -1,9 +1,10 @@
-"""Thread-safe, lazy-loading application pipeline state manager with persistent storage recovery."""
+"""Thread-safe, multi-tenant application pipeline state manager with persistent storage recovery."""
 
 from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -27,19 +28,33 @@ logger = logging.getLogger("rag_pipeline")
 
 
 class PipelineState:
-    """Thread-safe state manager with lazy model loading and persistent index recovery."""
+    """Thread-safe tenant-isolated state manager with lazy model loading and persistent recovery."""
 
     def __init__(
         self,
-        upload_dir: str = "data/uploads",
-        index_dir: str = "data/indices",
+        tenant_id: str = "default",
+        upload_dir: Optional[str | Path] = None,
+        index_dir: Optional[str | Path] = None,
         default_embedder_model: str = "all-MiniLM-L6-v2",
         default_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        auto_restore: bool = True
+        auto_restore: bool = True,
+        shared_embedder: Optional[BaseEmbedder] = None,
+        shared_reranker: Optional[CrossEncoderReranker] = None,
+        shared_generator: Optional[LLMGenerator] = None
     ):
+        self.tenant_id = tenant_id
         self._lock = threading.RLock()
-        self.upload_dir = Path(upload_dir)
-        self.index_dir = Path(index_dir)
+
+        if upload_dir is not None:
+            self.upload_dir = Path(upload_dir)
+        else:
+            self.upload_dir = Path(f"data/tenants/{tenant_id}/uploads")
+
+        if index_dir is not None:
+            self.index_dir = Path(index_dir)
+        else:
+            self.index_dir = Path(f"data/tenants/{tenant_id}/indices")
+
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.index_dir.mkdir(parents=True, exist_ok=True)
 
@@ -54,13 +69,15 @@ class PipelineState:
         self.embedding_model_name = default_embedder_model
         self.reranker_model_name = default_reranker_model
 
-        # Lazy component references
-        self._embedder: Optional[BaseEmbedder] = None
+        # Shared or lazy model references
+        self._embedder: Optional[BaseEmbedder] = shared_embedder
+        self._reranker: Optional[CrossEncoderReranker] = shared_reranker
+        self._generator: Optional[LLMGenerator] = shared_generator
+
+        # Tenant-specific retriever indices
         self._dense_retriever: Optional[DenseRetriever] = None
         self._sparse_retriever: Optional[SparseRetriever] = None
         self._hybrid_retriever: Optional[HybridRetriever] = None
-        self._reranker: Optional[CrossEncoderReranker] = None
-        self._generator: Optional[LLMGenerator] = None
         self.context_optimizer = ContextOptimizer(max_context_chars=4000)
 
         if auto_restore:
@@ -70,7 +87,7 @@ class PipelineState:
     def embedder(self) -> BaseEmbedder:
         with self._lock:
             if self._embedder is None:
-                logger.info(f"Lazy-initializing embedder: {self.embedding_model_name}")
+                logger.info(f"[{self.tenant_id}] Lazy-initializing embedder: {self.embedding_model_name}")
                 self._embedder = get_embedder(model_name=self.embedding_model_name)
             return self._embedder
 
@@ -108,7 +125,7 @@ class PipelineState:
     def reranker(self) -> CrossEncoderReranker:
         with self._lock:
             if self._reranker is None:
-                logger.info(f"Lazy-initializing reranker: {self.reranker_model_name}")
+                logger.info(f"[{self.tenant_id}] Lazy-initializing reranker: {self.reranker_model_name}")
                 self._reranker = CrossEncoderReranker(model_name=self.reranker_model_name, top_n=3)
             return self._reranker
 
@@ -117,12 +134,12 @@ class PipelineState:
         with self._lock:
             if self._generator is None:
                 provider = os.getenv("LLM_PROVIDER")
-                logger.info(f"Initializing generator with provider: {provider}")
+                logger.info(f"[{self.tenant_id}] Initializing generator with provider: {provider}")
                 self._generator = LLMGenerator(provider=provider)
             return self._generator
 
     def ingest_bytes(self, content_bytes: bytes, filename: str, persist: bool = True) -> List[Document]:
-        """Ingest document from raw bytes with persistence option."""
+        """Ingest document from raw bytes into this tenant's isolated repository."""
         with self._lock:
             new_docs = self.loader.load_from_bytes(content_bytes, filename=filename)
             self.documents.extend(new_docs)
@@ -138,98 +155,123 @@ class PipelineState:
         self,
         strategy: str = "recursive",
         chunk_size: int = 512,
-        chunk_overlap: int = 64,
-        embedding_model: Optional[str] = None
+        chunk_overlap: int = 64
     ) -> int:
-        """Chunk all loaded documents, build dense, sparse, and hybrid indices, and persist."""
+        """Chunk all tenant documents and build dense, sparse, and hybrid indices."""
         with self._lock:
-            start_t = time.perf_counter()
+            if not self.documents:
+                return 0
 
             self.chunking_strategy = strategy
             self.chunk_size = chunk_size
             self.chunk_overlap = chunk_overlap
 
-            if embedding_model and embedding_model != self.embedding_model_name:
-                self.embedding_model_name = embedding_model
-                self._embedder = None
-                self._dense_retriever = None
-
             chunker = get_chunker(
-                strategy=self.chunking_strategy,
-                chunk_size=self.chunk_size,
-                chunk_overlap=self.chunk_overlap
+                strategy=strategy,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                embedder=self.embedder if strategy == "semantic" else None
             )
+
             self.chunks = chunker.chunk_documents(self.documents)
+            logger.info(f"[{self.tenant_id}] Chunked {len(self.documents)} documents into {len(self.chunks)} chunks.")
 
-            # Re-index
+            # Build and synchronize indices
             self._dense_retriever = DenseRetriever(embedder=self.embedder)
-            self._sparse_retriever = SparseRetriever()
+            self._dense_retriever.index_chunks(self.chunks)
 
-            if self.chunks:
-                self._dense_retriever.index_chunks(self.chunks)
-                self._sparse_retriever.index_chunks(self.chunks)
+            self._sparse_retriever = SparseRetriever()
+            self._sparse_retriever.index_chunks(self.chunks)
 
             self._hybrid_retriever = HybridRetriever(
                 dense_retriever=self._dense_retriever,
                 sparse_retriever=self._sparse_retriever,
-                fusion_method="rrf"
+                fusion_method="rrf",
+                rrf_k=60
             )
 
-            # Persist indices to disk
             self.save_state()
-
-            elapsed = (time.perf_counter() - start_t) * 1000.0
-            logger.info(f"Indexed {len(self.chunks)} chunks in {elapsed:.1f}ms and persisted state.")
             return len(self.chunks)
 
     def query(
         self,
-        raw_query: str,
+        question: str,
         retrieval_strategy: str = "hybrid",
         top_k: int = 5,
-        enable_reranking: bool = True,
-        enable_query_enhancement: bool = False,
-        filters: Optional[Dict[str, Any]] = None
+        use_reranker: bool = False,
+        use_query_expansion: bool = False
     ) -> GenerationResponse:
-        """Process query end-to-end through retrieval, reranking, and generation."""
+        """Execute end-to-end RAG query against tenant's isolated index."""
         with self._lock:
-            query_text = raw_query.strip()
-            if enable_query_enhancement:
-                query_text, _ = QueryEnhancer.expand_query(query_text)
+            if not self.chunks:
+                return GenerationResponse(
+                    answer="No documents indexed in your tenant workspace. Please upload and index documents first.",
+                    citations=[],
+                    retrieved_chunks=[],
+                    confidence_score=0.0,
+                    latency_ms=0.0,
+                    is_abstained=True
+                )
 
-            # 1. Retrieval
+            start_t = time.perf_counter()
+            processed_query = question
+
+            if use_query_expansion:
+                processed_query, _ = QueryEnhancer.expand_query(question)
+
+            # Route retrieval
             if retrieval_strategy == "dense":
-                results = self.dense_retriever.retrieve(query_text, top_k=top_k, filters=filters)
+                retriever = self.dense_retriever
             elif retrieval_strategy == "sparse":
-                results = self.sparse_retriever.retrieve(query_text, top_k=top_k, filters=filters)
+                retriever = self.sparse_retriever
             else:
-                results = self.hybrid_retriever.retrieve(query_text, top_k=top_k, filters=filters)
+                retriever = self.hybrid_retriever
 
-            # 2. Rerank
-            if enable_reranking and results:
-                results = self.reranker.rerank(query_text, results)
+            results = retriever.retrieve(processed_query, top_k=top_k)
 
-            # 3. Context Optimization
-            context_str, citations, accepted_chunks = self.context_optimizer.optimize_context(results)
+            # Optional reranking
+            if use_reranker and results:
+                results = self.reranker.rerank(question, results)
 
-            # 4. Grounded Generation
+            # Context optimization
+            context_str, citations, accepted_results = self.context_optimizer.optimize_context(results)
+
+            # Grounded generation
             response = self.generator.generate(
-                query=raw_query,
+                query=question,
                 context=context_str,
                 citations=citations,
-                retrieved_chunks=accepted_chunks,
-                retrieval_strategy=retrieval_strategy
+                retrieved_chunks=accepted_results
             )
+
+            total_ms = (time.perf_counter() - start_t) * 1000.0
+            response.latency_ms = total_ms
             return response
 
     def _save_documents_manifest(self) -> None:
-        """Save ingested documents metadata manifest."""
+        """Persist document metadata manifest to tenant directory."""
         manifest_file = self.upload_dir / "documents_manifest.json"
-        data = [d.model_dump() for d in self.documents]
+        data = [
+            {
+                "id": d.id,
+                "text": d.text,
+                "metadata": {
+                    "source": d.metadata.source,
+                    "doc_id": d.metadata.doc_id,
+                    "file_type": d.metadata.file_type,
+                    "page_number": d.metadata.page_number,
+                    "character_count": d.metadata.character_count,
+                    "token_estimate": d.metadata.token_estimate,
+                    "hash": d.metadata.hash,
+                    "extra": d.metadata.extra,
+                }
+            }
+            for d in self.documents
+        ]
         manifest_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def save_state(self) -> None:
-        """Persist indices, chunks, and metadata to disk."""
+        """Persist indices, chunks, and metadata to tenant disk."""
         with self._lock:
             self._save_documents_manifest()
             if self._dense_retriever and self.chunks:
@@ -238,16 +280,16 @@ class PipelineState:
                 self._sparse_retriever.save(self.index_dir)
 
     def restore_state(self) -> bool:
-        """Restore documents and indices from disk after application restart."""
+        """Restore tenant documents and indices from persistent disk storage."""
         with self._lock:
             manifest_file = self.upload_dir / "documents_manifest.json"
             if manifest_file.exists():
                 try:
                     payload = json.loads(manifest_file.read_text(encoding="utf-8"))
                     self.documents = [Document(**item) for item in payload]
-                    logger.info(f"Restored {len(self.documents)} documents from {manifest_file}")
+                    logger.info(f"[{self.tenant_id}] Restored {len(self.documents)} documents from manifest.")
                 except Exception as e:
-                    logger.warning(f"Failed to restore documents manifest: {e}")
+                    logger.warning(f"[{self.tenant_id}] Failed to restore documents manifest: {e}")
 
             dense_meta = self.index_dir / "dense_metadata.json"
             if dense_meta.exists() and (self.index_dir / "dense_embeddings.npy").exists():
@@ -264,13 +306,106 @@ class PipelineState:
                         sparse_retriever=self._sparse_retriever,
                         fusion_method="rrf"
                     )
-                    logger.info(f"Restored {len(self.chunks)} indexed chunks from persistent storage.")
+                    logger.info(f"[{self.tenant_id}] Restored {len(self.chunks)} indexed chunks from storage.")
                     return True
                 except Exception as e:
-                    logger.warning(f"Failed to restore indices: {e}")
+                    logger.warning(f"[{self.tenant_id}] Failed to restore indices: {e}")
 
             return False
 
+    def reset(self) -> None:
+        """Clear all tenant documents, chunks, and persisted indices."""
+        with self._lock:
+            self.documents.clear()
+            self.chunks.clear()
+            self._dense_retriever = None
+            self._sparse_retriever = None
+            self._hybrid_retriever = None
+            if self.upload_dir.exists():
+                shutil.rmtree(self.upload_dir, ignore_errors=True)
+                self.upload_dir.mkdir(parents=True, exist_ok=True)
+            if self.index_dir.exists():
+                shutil.rmtree(self.index_dir, ignore_errors=True)
+                self.index_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[{self.tenant_id}] Workspace reset cleanly.")
 
-# Global pipeline state instance
-pipeline_state = PipelineState()
+
+class MultiTenantStateManager:
+    """Manages multi-tenant pipeline states with shared transformer model weights."""
+
+    def __init__(
+        self,
+        base_tenants_dir: str | Path = "data/tenants",
+        default_embedder_model: str = "all-MiniLM-L6-v2",
+        default_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    ):
+        self._lock = threading.RLock()
+        self.base_dir = Path(base_tenants_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.default_embedder_model = default_embedder_model
+        self.default_reranker_model = default_reranker_model
+
+        # Shared models across tenants to conserve RAM and avoid duplicate GPU allocations
+        self._shared_embedder: Optional[BaseEmbedder] = None
+        self._shared_reranker: Optional[CrossEncoderReranker] = None
+        self._shared_generator: Optional[LLMGenerator] = None
+
+        self._tenants: Dict[str, PipelineState] = {}
+
+    @property
+    def shared_embedder(self) -> BaseEmbedder:
+        with self._lock:
+            if self._shared_embedder is None:
+                self._shared_embedder = get_embedder(model_name=self.default_embedder_model)
+            return self._shared_embedder
+
+    @property
+    def shared_reranker(self) -> CrossEncoderReranker:
+        with self._lock:
+            if self._shared_reranker is None:
+                self._shared_reranker = CrossEncoderReranker(model_name=self.default_reranker_model, top_n=3)
+            return self._shared_reranker
+
+    @property
+    def shared_generator(self) -> LLMGenerator:
+        with self._lock:
+            if self._shared_generator is None:
+                self._shared_generator = LLMGenerator(provider=os.getenv("LLM_PROVIDER"))
+            return self._shared_generator
+
+    def get_state(self, tenant_id: str = "default", auto_restore: bool = True) -> PipelineState:
+        """Get or initialize isolated PipelineState for a specific tenant."""
+        safe_tenant = "".join(c for c in tenant_id if c.isalnum() or c in {"-", "_"}).strip() or "default"
+        with self._lock:
+            if safe_tenant not in self._tenants:
+                state = PipelineState(
+                    tenant_id=safe_tenant,
+                    upload_dir=self.base_dir / safe_tenant / "uploads",
+                    index_dir=self.base_dir / safe_tenant / "indices",
+                    default_embedder_model=self.default_embedder_model,
+                    default_reranker_model=self.default_reranker_model,
+                    auto_restore=auto_restore,
+                    shared_embedder=self.shared_embedder,
+                    shared_reranker=self.shared_reranker,
+                    shared_generator=self.shared_generator
+                )
+                self._tenants[safe_tenant] = state
+            return self._tenants[safe_tenant]
+
+    def restore_all_tenants(self) -> int:
+        """Scan tenant directories and restore persistent states."""
+        with self._lock:
+            restored_count = 0
+            if self.base_dir.exists():
+                for tenant_dir in self.base_dir.iterdir():
+                    if tenant_dir.is_dir():
+                        tenant_id = tenant_dir.name
+                        state = self.get_state(tenant_id, auto_restore=True)
+                        if state.documents or state.chunks:
+                            restored_count += 1
+            return restored_count
+
+
+# Global multi-tenant manager instance and default tenant state for backwards compatibility
+tenant_manager = MultiTenantStateManager()
+pipeline_state = tenant_manager.get_state("default")

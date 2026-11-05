@@ -1,0 +1,5 @@
+experiment_id,timestamp,pipeline_name,generator_provider,generator_model,mrr,ndcg_at_k,hit_at_k,answer_token_f1,factual_faithfulness,retrieval_latency_ms,rerank_latency_ms,generation_latency_ms,total_latency_mean_ms,latency_p95_ms
+NEURAL-01-Dense-Generation,2026-11-05T02:54:48.499961+00:00,Dense (all-MiniLM-L6-v2) + Neural LLM,local,google/flan-t5-small,0.9259,0.9444,1.0,0.2144,1.0,31.78,0.0,2256.63,2288.96,6216.14
+NEURAL-02-Sparse-Generation,2026-11-05T02:55:03.160443+00:00,Sparse (BM25) + Neural LLM,local,google/flan-t5-small,0.9556,0.9659,1.0,0.1234,0.975,0.26,0.0,723.62,724.23,1623.65
+NEURAL-03-Hybrid-RRF-Generation,2026-11-05T02:55:19.927548+00:00,Hybrid RRF + Neural LLM,local,google/flan-t5-small,1.0,1.0,1.0,0.172,0.95,0.4,0.0,829.58,830.32,1596.99
+NEURAL-04-Hybrid-Reranked-Generation,2026-11-05T02:55:30.911092+00:00,Hybrid RRF + Cross-Encoder + Neural LLM,local,google/flan-t5-small,0.9722,0.9795,1.0,0.0351,1.0,0.37,161.27,379.63,541.41,1112.48

@@ -67,21 +67,30 @@ class LLMGenerator(BaseGenerator):
         else:
             self.model_name = "grounded-extractive-mock"
 
-        self._local_pipeline = None
+        self._local_tokenizer = None
+        self._local_model = None
+        self._is_seq2seq = True
 
     def _ensure_local_pipeline(self):
-        """Lazy-load local transformer pipeline."""
-        if self._local_pipeline is None:
+        """Lazy-load local transformer tokenizer and model."""
+        if self._local_model is None:
             try:
-                from transformers import pipeline
+                from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+                import torch
                 logger.info(f"Loading local generation model: {self.model_name}")
-                self._local_pipeline = pipeline(
-                    "text2text-generation",
-                    model=self.model_name,
-                    device=self.device
-                )
+                self._local_tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                try:
+                    self._local_model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+                    self._is_seq2seq = True
+                except Exception:
+                    self._local_model = AutoModelForCausalLM.from_pretrained(self.model_name)
+                    self._is_seq2seq = False
+                
+                if self.device and self.device != "cpu":
+                    self._local_model.to(self.device)
+                self._local_model.eval()
             except Exception as e:
-                logger.warning(f"Could not load local transformer pipeline ({e}). Falling back to extractive mock.")
+                logger.warning(f"Could not load local transformer model ({e}). Falling back to extractive mock.")
                 self.provider = "mock"
 
     def generate(
@@ -129,23 +138,33 @@ class LLMGenerator(BaseGenerator):
     ) -> GenerationResponse:
         """Run local HuggingFace neural generation."""
         self._ensure_local_pipeline()
-        if self._local_pipeline is None:
+        if self._local_model is None or self._local_tokenizer is None:
             return self._generate_mock_extractive(query, context, citations, retrieved_chunks, retrieval_strategy)
 
         prompt = f"Context: {context[:1500]}\nQuestion: {query}\nAnswer based on context:"
         try:
-            outputs = self._local_pipeline(
-                prompt,
-                max_new_tokens=150,
-                temperature=self.temperature or 0.1,
-                do_sample=False
-            )
-            raw_answer = outputs[0]["generated_text"].strip()
-            
+            import torch
+            inputs = self._local_tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+            if self.device and self.device != "cpu":
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                output_ids = self._local_model.generate(
+                    **inputs,
+                    max_new_tokens=150,
+                    do_sample=False
+                )
+
+            if self._is_seq2seq:
+                raw_answer = self._local_tokenizer.decode(output_ids[0], skip_special_tokens=True).strip()
+            else:
+                input_len = inputs["input_ids"].shape[1]
+                raw_answer = self._local_tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
+
             # Grounding and citation appendage
             source_tag = f" [Source 1: {citations[0].source}]" if citations else ""
             formatted = f"{raw_answer}{source_tag}"
-            
+
             return GenerationResponse(
                 query=query,
                 answer=formatted,

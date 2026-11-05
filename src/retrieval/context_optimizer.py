@@ -29,8 +29,11 @@ class ContextOptimizer:
         if not results:
             return "", [], []
 
-        # 1. Filter by minimum similarity threshold
-        filtered = [r for r in results if r.score >= self.similarity_threshold]
+        # 1. Filter by minimum similarity threshold (sparse BM25 scores can be negative on small corpora)
+        if self.similarity_threshold > 0.0:
+            filtered = [r for r in results if r.retriever_type in {"sparse", "hybrid"} or r.score >= self.similarity_threshold]
+        else:
+            filtered = results
 
         # 2. Deduplicate by exact text hash
         deduped: List[RetrievalResult] = []

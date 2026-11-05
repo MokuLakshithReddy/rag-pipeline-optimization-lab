@@ -77,3 +77,22 @@ def test_faithfulness_bounds():
     assert 0.0 <= f_low <= 1.0
     assert f_high > f_low
 
+
+def test_dedicated_nli_faithfulness_breakdown():
+    from src.evaluation.faithfulness_evaluator import FactualEntailmentEvaluator
+    evaluator = FactualEntailmentEvaluator(lazy_load=True)
+
+    context = "PBFT requires 3f + 1 nodes to tolerate f Byzantine faulty nodes in the distributed system."
+    faithful_answer = "PBFT tolerates f Byzantine failures with 3f + 1 nodes."
+    hallucinated_answer = "PBFT operates with 100 nodes to achieve consensus."
+
+    res_faithful = evaluator.evaluate_faithfulness(faithful_answer, context)
+    assert res_faithful["faithfulness_score"] == 1.0
+    assert res_faithful["entailed_claims"] >= 1
+    assert res_faithful["contradicted_claims"] == 0
+
+    res_hallucinated = evaluator.evaluate_faithfulness(hallucinated_answer, context)
+    assert res_hallucinated["faithfulness_score"] == 0.0
+    assert res_hallucinated["contradicted_claims"] >= 1
+
+

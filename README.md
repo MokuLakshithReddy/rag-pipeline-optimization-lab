@@ -1,6 +1,6 @@
 # RAG Pipeline Optimization Lab
 
-A production-oriented Retrieval-Augmented Generation (RAG) engineering, benchmarking, and optimization platform developed for the Kaggle Competition: **Gen AI Project 4 – Building & Optimizing RAG Pipelines**.
+A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarking, and multi-tenant deployment platform developed for the Kaggle Competition: **Gen AI Project 4 – Building & Optimizing RAG Pipelines**.
 
 - **Official Competition Link**: [https://www.kaggle.com/competitions/gen-ai-project-4-building-optimizing-rag-pipelines](https://www.kaggle.com/competitions/gen-ai-project-4-building-optimizing-rag-pipelines)
 - **Competition Audit & Specification**: [docs/COMPETITION_SPEC.md](docs/COMPETITION_SPEC.md)
@@ -9,14 +9,15 @@ A production-oriented Retrieval-Augmented Generation (RAG) engineering, benchmar
 
 ## 1. Problem Statement & Motivation
 
-Basic "PDF chatbot" tutorials typically perform naive fixed-window character splitting, embed chunks through a single dense vector model, and fetch nearest neighbors using plain vector similarity. In real-world enterprise environments and rigorous competition settings, this naive approach suffers from severe pathologies:
+Standard "PDF chatbot" tutorials typically perform naive fixed-window character splitting, embed chunks through a single dense vector model, and fetch nearest neighbors using plain vector similarity. In real-world enterprise environments and competition evaluations, this naive approach suffers from fundamental engineering bottlenecks:
 1. **Semantic Boundary Mutilation**: Slicing text mid-sentence or mid-proposition destroys the syntactic coherence of key factual statements.
 2. **Dense vs. Keyword Mismatch**: Dense embeddings frequently fail on exact part numbers, technical acronyms, and specialized nomenclature that lexical search easily captures. Conversely, keyword search (BM25) fails when user queries are paraphrased.
-3. **Score Distribution Incompatibility**: Naively summing raw cosine similarities and BM25 scores leads to severe score calibration artifacts.
+3. **Score Incompatibility**: Naively summing raw cosine similarities and BM25 scores leads to severe calibration artifacts.
 4. **The "Lost in the Middle" Effect**: LLM attention degrades for relevant passages placed in the middle of large context windows.
-5. **Indirect Prompt Injection**: Malicious or adversarial documents ingested into the index can hijack generation prompts.
+5. **Indirect Prompt Injection & Multi-Tenant Bleed**: Shared global state leads to cross-tenant data leakage, while adversarial documents can hijack LLM generation prompts.
+6. **Conflating Relevance with Factual Entailment**: Using relevance rerankers (e.g. MS-MARCO) to score faithfulness yields misleading results because relevance does not verify premise-to-hypothesis entailment.
 
-This platform implements an end-to-end, reproducible RAG engineering suite with multi-format parsing, multi-strategy chunking, hybrid Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, Lost-in-the-Middle context ordering, and strict evidence-grounded generation with abstention guards.
+This platform implements an end-to-end, reproducible RAG engineering suite with multi-format parsing, multi-strategy chunking, hybrid Reciprocal Rank Fusion (RRF), Cross-Encoder reranking, Lost-in-the-Middle context ordering, dedicated proposition-level NLI entailment verification, authenticated multi-tenant state isolation, and strict evidence-grounded generation with abstention guards.
 
 ---
 
@@ -25,7 +26,7 @@ This platform implements an end-to-end, reproducible RAG engineering suite with 
 ```
 [ Documents (PDF, MD, TXT, JSON, CSV) ]
                   |
-         (Safe Parsing & Hash Dedup)
+     (Safe Parsing & Tenant Hash Dedup)
                   v
 [ Hierarchical Recursive Chunking (512 / 64) ]
                   |
@@ -49,32 +50,53 @@ SentenceTransformers        Okapi BM25
                   |
                   v
 [ Evidence-Grounded Generator & Abstention Guard ]
+                  |
+                  v
+[ Dedicated NLI Factual Entailment Evaluator ]
 ```
 
 - **Universal Document Loader**: Safely parses `.pdf` (preserving page numbers), `.txt`, `.md`, `.json`, and `.csv`.
 - **Three Chunking Strategies**: Fixed-size chunking, Recursive character chunking, and Semantic shift chunking.
 - **Dual Representation Indexing**: SentenceTransformers dense vector search (`all-MiniLM-L6-v2`) with L2 normalization + Okapi BM25 sparse index.
 - **Hybrid Fusion (RRF)**: Reciprocal Rank Fusion ($k=60$) dynamically merges dense and sparse rankings without arbitrary score scaling.
-- **Cross-Encoder Reranker**: `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks top candidate chunks with full query-chunk cross-attention.
+- **Cross-Encoder Reranker**: `cross-encoder/ms-marco-MiniLM-L-6-v2` reranks top candidate chunks with full query-chunk cross-attention (with enforced strict mode to prevent silent lexical fallback).
 - **Context Optimizer**: Formats source citations, removes redundant chunks, and places top evidence at the beginning and end of context.
-- **Security by Design**: Path traversal protection, 25MB file upload ceiling, content type whitelisting, prompt injection containment, and safe error logging.
+- **Dedicated NLI Factual Entailment**: `FactualEntailmentEvaluator` decomposes answers into proposition claims and verifies 3-class entailment (`entailed`, `contradicted`, `neutral`) rather than conflating query relevance with factual grounding.
+- **Multi-Tenant State Isolation**: `MultiTenantStateManager` isolates uploads, vector stores, and BM25 indices per tenant while reusing singleton neural weights across requests.
+- **Security by Design**: Header API Key authentication (`X-API-Key` or `Bearer`), path traversal sanitization, 25MB upload ceiling, content type validation, prompt injection containment, and safe error logging.
 
 ---
 
-## 3. Benchmark Results
+## 3. Benchmark Results & Pareto Trade-Off Analysis
 
-Controlled single-variable experiments were conducted against a verified 30-document multi-domain benchmark corpus with 20 challenging ground-truth queries (conceptual paraphrases, exact keywords, multi-hop, distractors):
+### Controlled Retrieval Ablation Suite
+Controlled single-variable experiments were conducted against a verified 30-document multi-domain benchmark corpus with 20 challenging ground-truth queries:
 
-| Experiment ID | Retrieval Strategy | Chunking Strategy | Reranker (Status) | Generator | Hit@5 | MRR | NDCG@5 | Latency (Mean) | Delta RSS |
+| Experiment ID | Retrieval Strategy | Chunking Strategy | Reranker (Status) | Generator | Hit@5 | MRR | NDCG@5 | Latency (p95) | Delta RSS |
 | :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `EXP-01-Baseline-Dense-Fixed256` | Dense | Fixed (256/32) | False (none) | mock | **1.000** | **0.919** | **0.938** | 32.2ms | +12.3MB |
-| `EXP-02-Chunking-Recursive256` | Dense | Recursive (256/32) | False (none) | mock | **0.944** | **0.907** | **0.917** | 0.6ms | +25.1MB |
-| `EXP-03-Chunking-Recursive512` | Dense | Recursive (512/64) | False (none) | mock | **1.000** | **0.926** | **0.944** | 0.7ms | +1.5MB |
-| `EXP-04-Sparse-BM25` | Sparse | Recursive (512/64) | False (none) | mock | **1.000** | **0.956** | **0.966** | 1.2ms | +0.1MB |
-| `EXP-05-Hybrid-RRF` | Hybrid | Recursive (512/64) | False (none) | mock | **1.000** | **1.000** | **1.000** | 2.2ms | +0.0MB |
-| `EXP-06-Hybrid-Reranked` | Hybrid | Recursive (512/64) | Neural Cross-Encoder | mock | **1.000** | **0.972** | **0.979** | 267.9ms | +101.5MB |
+| `EXP-01-Baseline-Dense-Fixed256` | Dense | Fixed (256/32) | False (none) | mock | **1.000** | **0.919** | **0.938** | 39.2ms | +12.3MB |
+| `EXP-02-Chunking-Recursive256` | Dense | Recursive (256/32) | False (none) | mock | **0.944** | **0.907** | **0.917** | 1.4ms | +25.1MB |
+| `EXP-03-Chunking-Recursive512` | Dense | Recursive (512/64) | False (none) | mock | **1.000** | **0.926** | **0.944** | 1.2ms | +1.5MB |
+| `EXP-04-Sparse-BM25` | Sparse | Recursive (512/64) | False (none) | mock | **1.000** | **0.956** | **0.966** | 1.6ms | +0.1MB |
+| `EXP-05-Hybrid-RRF` | Hybrid | Recursive (512/64) | False (none) | mock | **1.000** | **1.000** | **1.000** | 4.0ms | +0.0MB |
+| `EXP-06-Hybrid-Reranked` | Hybrid | Recursive (512/64) | Neural Cross-Encoder | mock | **1.000** | **0.972** | **0.979** | 307.1ms | +101.5MB |
 
-*Detailed analysis is documented in [reports/retrieval_analysis.md](reports/retrieval_analysis.md) and [reports/experiment_summary.md](reports/experiment_summary.md).*
+### End-to-End Real Neural LLM Generation & NLI Verification
+In addition to mock extractive heuristics, an end-to-end benchmark was executed using an active local neural generative model (`google/flan-t5-small`) evaluated with genuine proposition-level NLI factual entailment:
+
+| Experiment ID | Retrieval Pipeline | Generator Model | MRR | NDCG@5 | Answer F1 | Factual Faithfulness | Generation Latency | Total Latency (p95) |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| `NEURAL-01-Dense` | Dense (all-MiniLM-L6-v2) | `google/flan-t5-small` | **0.926** | 0.944 | **0.214** | **1.000** | 2256.6ms | 6216.1ms |
+| `NEURAL-02-Sparse` | Sparse (BM25) | `google/flan-t5-small` | **0.956** | 0.966 | **0.123** | **0.975** | 723.6ms | 1623.7ms |
+| `NEURAL-03-Hybrid-RRF` | Hybrid RRF | `google/flan-t5-small` | **1.000** | 1.000 | **0.172** | **0.950** | 829.6ms | 1597.0ms |
+| `NEURAL-04-Hybrid-Reranked` | Hybrid + Cross-Encoder | `google/flan-t5-small` | **0.972** | 0.980 | **0.035** | **1.000** | 379.6ms | 1112.5ms |
+
+### The Latency-Accuracy Pareto Frontier
+- **Low-Latency Production (<20ms SLA)**: Pure **Hybrid RRF** (`EXP-05`) achieves optimal MRR (1.000) and NDCG (1.000) on the development benchmark with a 4.0ms p95 latency and 0MB incremental memory footprint.
+- **Deep-Reasoning Production (>500ms SLA)**: Cross-Encoder neural reranking (`EXP-06`) adds full transformer cross-attention, resolving subtle candidate ambiguities at the cost of ~300ms CPU latency and +101.5MB Delta RSS.
+- **Controlled Development Scope**: The 30-document / 20-query evaluation set provides a controlled development benchmark for causal ablation. Out-of-domain scaling requires continuous validation as document volume grows.
+
+*Detailed analysis is documented in [reports/retrieval_analysis.md](reports/retrieval_analysis.md), [reports/experiment_summary.md](reports/experiment_summary.md), and [reports/neural_generation_summary.md](reports/neural_generation_summary.md).*
 
 ---
 
@@ -119,11 +141,19 @@ Open [http://localhost:8501](http://localhost:8501) in your browser. Features:
 - Toggle Cross-Encoder reranking and query enhancement.
 - View grounded answers, source citations, latency breakdowns, and retrieved chunks.
 
-### Option B: FastAPI Backend Server
+### Option B: Authenticated FastAPI Backend Server
 ```bash
 uv run uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-Interactive Swagger API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+Interactive Swagger documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+Authenticate using API Key headers:
+```bash
+# Querying via tenant-authenticated endpoint
+curl -X POST "http://localhost:8000/v1/query" \
+     -H "X-API-Key: test-api-key-default" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "How does Raft handle leader election?"}'
+```
 
 ### Option C: Docker Compose
 ```bash
@@ -134,14 +164,19 @@ docker-compose up --build
 
 ## 6. Running Tests & Benchmarks
 
-Execute the complete 47-test Pytest test suite covering unit, integration, mathematical metric bounds, cross-encoder strict mode, and security checks:
+Execute the complete test suite covering unit, integration, multi-tenancy, authentication, mathematical metric bounds, cross-encoder strict mode, and security checks:
 ```bash
 uv run pytest tests -v
 ```
 
-Execute the controlled experiment benchmark suite:
+Execute the controlled retrieval ablation suite:
 ```bash
 uv run python src/experiments/runner.py
+```
+
+Execute the live neural LLM generation benchmark:
+```bash
+uv run python src/experiments/run_neural_benchmark.py --model-name google/flan-t5-small
 ```
 
 ---
@@ -151,10 +186,10 @@ uv run python src/experiments/runner.py
 The dedicated competition submission notebook is located at:
 - [`notebooks/competition_solution.ipynb`](notebooks/competition_solution.ipynb)
 
-It is completely self-contained and handles:
-- Running offline inside Kaggle GPU/CPU kernels without external API calls.
-- Adapting to both Q&A submission schemas (`id,prediction`) and ranked retrieval schemas (`query_id,retrieved_doc_ids`).
-- Enforcing row-count integrity and null-value validation.
+Features:
+- **Autonomous Schema Conformance**: Dynamically inspects and adapts to arbitrary `sample_submission.csv` schemas (whether Q&A text columns, ranked document IDs, or multi-target formats) without hardcoded assumptions.
+- **Offline Self-Contained Execution**: Designed to execute in Kaggle offline GPU/CPU environments without external API calls.
+- **Strict Verification Assertions**: Verifies row counts, column names, and non-null constraints before outputting `/kaggle/working/submission.csv`.
 
 ---
 
@@ -162,7 +197,7 @@ It is completely self-contained and handles:
 
 ```
 rag-pipeline-optimization-lab/
-├── api/                       # FastAPI REST API & Pipeline State
+├── api/                       # Authenticated FastAPI REST API & Multi-Tenant State
 ├── app/                       # Streamlit Interactive Demonstration UI
 ├── src/
 │   ├── ingestion/             # Universal loader, models, and validation
@@ -171,18 +206,18 @@ rag-pipeline-optimization-lab/
 │   ├── retrieval/             # Dense, Sparse BM25, and Hybrid RRF retrievers
 │   ├── reranking/             # Cross-Encoder reranker and fallbacks
 │   ├── generation/            # Evidence-grounded generation and abstention
-│   ├── evaluation/            # Precision, Recall, MRR, NDCG, and Faithfulness
-│   └── experiments/           # Controlled benchmark runner and tracker
+│   ├── evaluation/            # Metrics, Evaluator, and FactualEntailmentEvaluator
+│   └── experiments/           # Controlled benchmark runner and neural benchmark
 ├── notebooks/
 │   ├── competition_solution.ipynb
 │   └── engineering_benchmarks.ipynb
 ├── tests/
-│   ├── unit/                  # Ingestion, chunking, retrieval, generation tests
-│   ├── integration/           # Pipeline and API integration tests
+│   ├── unit/                  # Ingestion, chunking, retrieval, metric bounds tests
+│   ├── integration/           # Pipeline, API auth, and multi-tenant isolation tests
 │   └── security/              # Path traversal, upload validation, injection tests
 ├── data/
 │   └── benchmarks/            # Standardized benchmark corpus and queries
-├── reports/                   # Generated benchmark CSV and analysis reports
+├── reports/                   # Generated benchmark CSVs and analysis reports
 ├── configs/                   # Pipeline YAML configuration
 ├── docs/                      # Architectural, evaluation, security, and Kaggle specs
 ├── Dockerfile
@@ -197,4 +232,3 @@ rag-pipeline-optimization-lab/
 ## 9. License
 
 This repository is governed by the project's [Restricted Proprietary License](LICENSE).
-

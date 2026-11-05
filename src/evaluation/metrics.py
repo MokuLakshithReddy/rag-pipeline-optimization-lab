@@ -212,25 +212,24 @@ def verify_claim_factual_entailment(
 def compute_faithfulness(
     prediction: str,
     context: str,
-    nli_model: Optional[Any] = None
+    nli_evaluator: Optional[Any] = None
 ) -> float:
     """Measure factual faithfulness by verifying that answer claims are entailed by context.
     
     Rather than token presence, this decomposes the generated answer into constituent
-    claims and verifies factual entailment and entity grounding for each claim.
+    claims and verifies factual entailment and entity grounding for each claim via
+    dedicated NLI evaluation or calibrated premise entailment.
     
     Mathematically bounded in [0.0, 1.0].
     """
     if not context.strip():
         return 0.0
 
-    claims = extract_claims(prediction)
-    if not claims:
-        return 1.0
+    if nli_evaluator is not None and hasattr(nli_evaluator, "evaluate_faithfulness"):
+        res = nli_evaluator.evaluate_faithfulness(prediction, context)
+        return float(min(1.0, max(0.0, res["faithfulness_score"])))
 
-    entailed_scores = [
-        verify_claim_factual_entailment(claim, context, nli_model=nli_model)
-        for claim in claims
-    ]
-    faithfulness = sum(entailed_scores) / len(claims)
-    return float(min(1.0, max(0.0, faithfulness)))
+    from src.evaluation.faithfulness_evaluator import FactualEntailmentEvaluator
+    evaluator = FactualEntailmentEvaluator()
+    res = evaluator.evaluate_faithfulness(prediction, context)
+    return float(min(1.0, max(0.0, res["faithfulness_score"])))

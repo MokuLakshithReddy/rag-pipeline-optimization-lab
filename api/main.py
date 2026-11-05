@@ -1,4 +1,4 @@
-"""FastAPI backend application for the RAG optimization platform."""
+"""FastAPI backend application for the multi-tenant RAG optimization platform."""
 
 from __future__ import annotations
 from contextlib import asynccontextmanager
@@ -7,12 +7,13 @@ import os
 import time
 import uuid
 from typing import List
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pandas as pd
 
-from api.pipeline_state import pipeline_state
+from api.auth import TenantContext, get_current_tenant
+from api.pipeline_state import tenant_manager, pipeline_state
 from api.schemas import (
     DocumentItem,
     DocumentListResponse,
@@ -41,19 +42,18 @@ logger = logging.getLogger("api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle manager: Restores persisted state on startup."""
+    """Lifecycle manager: Restores persisted state across all active tenants on startup."""
     logger.info("Initializing API application lifecycle...")
-    restored = pipeline_state.restore_state()
-    if restored:
-        logger.info(f"Auto-restored {len(pipeline_state.documents)} docs and {len(pipeline_state.chunks)} chunks.")
+    restored_tenants = tenant_manager.restore_all_tenants()
+    logger.info(f"Auto-restored storage for {restored_tenants} tenant workspace(s).")
     yield
     logger.info("Shutting down API application...")
 
 
 app = FastAPI(
     title="RAG Pipeline Optimization & Experimentation Lab API",
-    version="0.1.0",
-    description="Production-grade API for Retrieval-Augmented Generation benchmarking and optimization.",
+    version="0.2.0",
+    description="Multi-tenant production-grade API for Retrieval-Augmented Generation benchmarking and optimization.",
     lifespan=lifespan
 )
 
@@ -71,10 +71,9 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def add_security_and_timing_headers(request: Request, call_next):
-    """Enforce request IDs, measure latency, and add security headers."""
+async def security_and_tracing_middleware(request: Request, call_next):
+    """Audit middleware adding request correlation IDs and security response headers."""
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
-    # Attach to request state so downstream endpoints share the identical request_id
     request.state.request_id = request_id
     start_time = time.perf_counter()
 
@@ -97,22 +96,27 @@ async def add_security_and_timing_headers(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """System health check and state metrics."""
+    """Unauthenticated system health check and state metrics."""
+    default_state = tenant_manager.get_state("default")
     return HealthResponse(
         status="healthy",
-        version="0.1.0",
+        version="0.2.0",
         environment=os.getenv("APP_ENV", "development"),
-        total_documents=len(pipeline_state.documents),
-        total_indexed_chunks=len(pipeline_state.chunks)
+        total_documents=len(default_state.documents),
+        total_indexed_chunks=len(default_state.chunks)
     )
 
 
 @app.post("/v1/documents", response_model=DocumentUploadResponse, tags=["Documents"])
-async def upload_documents(files: List[UploadFile] = File(...)):
-    """Upload and ingest one or more documents with bounded chunked streaming."""
+async def upload_documents(
+    files: List[UploadFile] = File(...),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """Upload and ingest documents into tenant-isolated knowledge base."""
     if not files:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No files uploaded.")
 
+    state = tenant_manager.get_state(tenant.tenant_id)
     uploaded_names: List[str] = []
     total_new_docs = 0
 
@@ -143,7 +147,7 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File '{safe_name}': {err_msg}")
 
         try:
-            new_docs = pipeline_state.ingest_bytes(content, filename=safe_name, persist=True)
+            new_docs = state.ingest_bytes(content, filename=safe_name, persist=True)
             total_new_docs += len(new_docs)
             uploaded_names.append(safe_name)
         except DocumentValidationError as dve:
@@ -153,13 +157,14 @@ async def upload_documents(files: List[UploadFile] = File(...)):
         status="success",
         uploaded_files=uploaded_names,
         total_documents_ingested=total_new_docs,
-        message=f"Successfully ingested {total_new_docs} document segment(s) from {len(uploaded_names)} file(s)."
+        message=f"[{tenant.tenant_id}] Successfully ingested {total_new_docs} document segment(s) from {len(uploaded_names)} file(s)."
     )
 
 
 @app.get("/v1/documents", response_model=DocumentListResponse, tags=["Documents"])
-async def list_documents():
-    """List all ingested documents and their metadata."""
+async def list_documents(tenant: TenantContext = Depends(get_current_tenant)):
+    """List all ingested documents in the authenticated tenant's workspace."""
+    state = tenant_manager.get_state(tenant.tenant_id)
     items = [
         DocumentItem(
             id=d.id,
@@ -168,26 +173,29 @@ async def list_documents():
             character_count=d.metadata.character_count,
             page_number=d.metadata.page_number
         )
-        for d in pipeline_state.documents
+        for d in state.documents
     ]
     return DocumentListResponse(total=len(items), documents=items)
 
 
 @app.post("/v1/index", response_model=IndexResponse, tags=["Index"])
-async def build_index(req: IndexRequest):
-    """Trigger chunking, vector/sparse index construction, and disk persistence."""
-    if not pipeline_state.documents:
+async def build_index(
+    req: IndexRequest,
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """Trigger chunking, vector/sparse index construction for the tenant."""
+    state = tenant_manager.get_state(tenant.tenant_id)
+    if not state.documents:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Knowledge base is empty. Upload documents before indexing."
+            detail=f"Knowledge base is empty for tenant '{tenant.tenant_id}'. Upload documents before indexing."
         )
 
     start_time = time.perf_counter()
-    chunk_count = pipeline_state.build_index(
+    chunk_count = state.build_index(
         strategy=req.chunking_strategy,
         chunk_size=req.chunk_size,
-        chunk_overlap=req.chunk_overlap,
-        embedding_model=req.embedding_model
+        chunk_overlap=req.chunk_overlap
     )
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -196,47 +204,51 @@ async def build_index(req: IndexRequest):
         chunking_strategy=req.chunking_strategy,
         chunk_size=req.chunk_size,
         chunk_overlap=req.chunk_overlap,
-        embedding_model=req.embedding_model,
+        embedding_model=state.embedding_model_name,
         total_chunks_indexed=chunk_count,
         index_time_ms=elapsed_ms
     )
 
 
 @app.post("/v1/query", response_model=QueryResponse, tags=["Query"])
-async def query_pipeline(req: QueryRequest, request: Request):
-    """Query the RAG pipeline with selected retrieval and reranking configuration."""
+async def query_pipeline(
+    req: QueryRequest,
+    request: Request,
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """Query the authenticated tenant's isolated knowledge base."""
     request_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())
+    state = tenant_manager.get_state(tenant.tenant_id)
 
-    if not pipeline_state.chunks:
+    if not state.chunks:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Index is empty. Ingest documents and trigger /v1/index first."
+            detail=f"Index is empty for tenant '{tenant.tenant_id}'. Ingest documents and trigger /v1/index first."
         )
 
-    response = pipeline_state.query(
-        raw_query=req.query,
+    response = state.query(
+        question=req.query,
         retrieval_strategy=req.retrieval_strategy,
         top_k=req.top_k,
-        enable_reranking=req.enable_reranking,
-        enable_query_enhancement=req.enable_query_enhancement,
-        filters=req.filters
+        use_reranker=req.enable_reranking,
+        use_query_expansion=req.enable_query_enhancement
     )
 
     return QueryResponse(
-        query=response.query,
+        query=req.query,
         answer=response.answer,
         citations=response.citations,
         retrieved_chunks=response.retrieved_chunks,
         is_abstained=response.is_abstained,
-        retrieval_strategy=response.retrieval_strategy,
+        retrieval_strategy=req.retrieval_strategy,
         latency_ms=response.latency_ms,
-        model_name=response.model_name,
+        model_name=state.generator.model_name,
         request_id=request_id
     )
 
 
 @app.get("/v1/experiments", response_model=ExperimentListResponse, tags=["Experiments"])
-async def get_experiments():
+async def get_experiments(tenant: TenantContext = Depends(get_current_tenant)):
     """Retrieve logged benchmark experiment runs."""
     csv_file = "reports/benchmark_results.csv"
     if not os.path.exists(csv_file):

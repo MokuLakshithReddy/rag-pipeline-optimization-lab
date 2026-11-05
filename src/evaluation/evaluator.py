@@ -29,12 +29,14 @@ class RAGEvaluator:
         generator: Optional[BaseGenerator] = None,
         reranker: Optional[BaseReranker] = None,
         context_optimizer: Optional[ContextOptimizer] = None,
+        nli_evaluator: Optional[Any] = None,
         top_k: int = 5
     ):
         self.retriever = retriever
         self.generator = generator
         self.reranker = reranker
         self.context_optimizer = context_optimizer or ContextOptimizer()
+        self.nli_evaluator = nli_evaluator
         self.top_k = top_k
 
     def evaluate_dataset(self, benchmark_items: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -125,8 +127,7 @@ class RAGEvaluator:
                 generation_latencies.append(gen_ms)
 
                 if not gen_resp.is_abstained:
-                    nli_model = getattr(self.reranker, "_model", None) if self.reranker else None
-                    faithfulness_scores.append(compute_faithfulness(gen_resp.answer, context_str, nli_model=nli_model))
+                    faithfulness_scores.append(compute_faithfulness(gen_resp.answer, context_str, nli_evaluator=self.nli_evaluator))
                     if ground_truth:
                         f1_scores.append(compute_token_f1(gen_resp.answer, ground_truth))
             else:

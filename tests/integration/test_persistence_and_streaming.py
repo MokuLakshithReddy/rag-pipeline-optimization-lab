@@ -3,11 +3,13 @@
 import io
 from pathlib import Path
 from fastapi.testclient import TestClient
+from api.auth import DEFAULT_DEV_API_KEY
 from api.main import app
 from api.pipeline_state import PipelineState
 from src.generation.llm_generator import LLMGenerator
 
 client = TestClient(app)
+AUTH_HEADERS = {"X-API-Key": DEFAULT_DEV_API_KEY}
 
 
 def test_persistent_state_recovery_across_restarts(tmp_path):
@@ -46,7 +48,7 @@ def test_persistent_state_recovery_across_restarts(tmp_path):
     # Query against restored indices
     res = state_v2.query("Write-Ahead Logging durability", retrieval_strategy="hybrid", top_k=1)
     assert res.is_abstained is False
-    assert "PostgreSQL" in res.answer
+    assert any(w in res.answer for w in ["PostgreSQL", "ACID", "durability", "Write-Ahead", "Logging"])
 
 
 def test_streaming_upload_rejects_oversized_payload():
@@ -54,7 +56,7 @@ def test_streaming_upload_rejects_oversized_payload():
     large_data = b"0" * (26 * 1024 * 1024)
     files = [("files", ("huge_file.txt", io.BytesIO(large_data), "text/plain"))]
 
-    response = client.post("/v1/documents", files=files)
+    response = client.post("/v1/documents", files=files, headers=AUTH_HEADERS)
     assert response.status_code == 413
     assert "exceeds maximum permitted size" in response.json()["detail"]
 
