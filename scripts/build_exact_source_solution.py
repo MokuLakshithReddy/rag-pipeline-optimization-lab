@@ -524,3 +524,4 @@ for i, r in golden_df.iterrows():
     s = r["cited_sections"].split("|")
     assert len(d) == len(s), f"Mismatch at {r['question_id']}: {len(d)} docs vs {len(s)} secs"
 print("All 50 rows have exact doc-section length parity.")
+

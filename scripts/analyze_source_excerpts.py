@@ -14,3 +14,4 @@ for path in sorted(glob.glob(os.path.join(KB_DIR, "*.md"))):
 print("=== Section 2 in 01 Windows ===")
 part = docs["01_windows_installation_login_guide"].split("## Section 2: Common Installation Errors")[1].split("## Section 3")[0]
 print(part)
+
