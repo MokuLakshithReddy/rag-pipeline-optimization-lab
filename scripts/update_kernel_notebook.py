@@ -120,3 +120,4 @@ with open(notebook_path, "w", encoding="utf-8") as f:
     json.dump(nb, f, indent=1)
 
 print(f"Updated {notebook_path} successfully.")
+

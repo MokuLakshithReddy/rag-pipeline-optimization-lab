@@ -487,3 +487,4 @@ out_df = pd.DataFrame(results)
 out_path = "temp_kernel/submission_optimized.csv"
 out_df.to_csv(out_path, index=False)
 print(f"Generated {len(out_df)} rows in {out_path}")
+

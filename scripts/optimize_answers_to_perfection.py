@@ -513,3 +513,4 @@ for i, r in sub_df.iterrows():
     assert len(d) == len(s), f"Mismatch at {r['question_id']}: {len(d)} docs vs {len(s)} secs"
 
 print("All 50 rows verified for 1-to-1 document-section alignment.")
+
