@@ -28,3 +28,7 @@ logs/
 *.log
 .DS_Store
 Thumbs.db
+kaggle_competition_data/
+temp_kernel/
+temp_kernel_out/
+submission.csv
