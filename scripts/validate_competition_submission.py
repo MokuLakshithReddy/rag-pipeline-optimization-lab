@@ -78,7 +78,7 @@ def main() -> int:
             if doc_id not in documents:
                 errors.append(f"{qid}: unknown source document {doc_id!r}")
                 continue
-            headings = re.findall(r"^##\\s+(.+?)\\s*$", documents[doc_id], flags=re.MULTILINE)
+            headings = re.findall(r"^##\s+(.+?)\s*$", documents[doc_id], flags=re.MULTILINE)
             if section not in headings:
                 errors.append(f"{qid}: {section!r} is not an exact H2 heading in {doc_id!r}")
 
