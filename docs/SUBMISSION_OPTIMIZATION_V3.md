@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This branch adds a candidate-generation artifact locally and a reusable validator for the original ProctorIQ competition archive. The existing 73.57 Kaggle submission remains the baseline and must not be overwritten.
+This branch adds a reusable validator and experiment protocol for the original ProctorIQ competition archive. The companion candidate CSV (`submission_source_faithful_v3.csv`) is delivered separately; the existing 73.57 Kaggle submission remains the baseline and must not be overwritten.
 
 ## Published scoring weights
 
