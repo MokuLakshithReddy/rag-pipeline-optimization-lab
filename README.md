@@ -7,6 +7,36 @@ A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarki
 
 ---
 
+## At a glance
+
+![GitHub stars](https://img.shields.io/github/stars/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square&label=stars)
+![GitHub forks](https://img.shields.io/github/forks/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square&label=forks)
+![Open issues](https://img.shields.io/github/issues/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square&label=open%20issues)
+![Last commit](https://img.shields.io/github/last-commit/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square)
+
+**Why it matters:** RAG quality is shaped by the whole retrieval pipeline—not just the language model. This lab makes chunking, dense and sparse retrieval, rank fusion, reranking, context selection, generation, and factual evaluation explicit so each stage can be measured and compared.
+
+## Visual architecture
+
+```mermaid
+flowchart TD
+    D["PDF / Markdown / TXT / JSON / CSV"] --> L["Safe parsing and deduplication"]
+    L --> C["Chunking strategies"]
+    C --> E["Dense embedding index"]
+    C --> B["Sparse BM25 index"]
+    E --> F["Reciprocal Rank Fusion"]
+    B --> F
+    F --> R["Cross-encoder reranker"]
+    R --> O["Context optimization"]
+    O --> G["Evidence-grounded generation"]
+    G --> A["Abstention guard"]
+    A --> N["NLI factual-entailment evaluation"]
+    N --> M["Benchmark reports and comparison"]
+```
+
+**Evidence boundary:** The benchmark section below reports controlled retrieval, generation, and scalability experiments. Results should be read alongside each experiment's corpus, model, concurrency, and hardware settings; they should not be treated as hardware-independent performance guarantees.
+
+---
 ## 1. Problem Statement & Motivation
 
 Standard "PDF chatbot" tutorials typically perform naive fixed-window character splitting, embed chunks through a single dense vector model, and fetch nearest neighbors using plain vector similarity. In real-world enterprise environments and competition evaluations, this naive approach suffers from fundamental engineering bottlenecks:
