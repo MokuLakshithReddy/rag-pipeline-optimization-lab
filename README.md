@@ -7,6 +7,40 @@ A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarki
 
 ---
 
+## Visual workflow: an experimentally measurable RAG pipeline
+
+```mermaid
+flowchart TD
+    A["PDF / Markdown / text / structured documents"] --> B["Parse, validate and deduplicate"]
+    B --> C["Recursive and semantic chunking"]
+    C --> D1["Dense vector retrieval"]
+    C --> D2["Sparse BM25 retrieval"]
+    D1 --> E["Reciprocal Rank Fusion"]
+    D2 --> E
+    E --> F["Optional cross-encoder reranking"]
+    F --> G["Context ordering and evidence selection"]
+    G --> H["Grounded generation"]
+    H --> I["Proposition-level verification and citation checks"]
+    I --> J["Answer with evidence or abstain"]
+```
+
+### Retrieval latency evidence
+
+The SLA report uses 2 warm-up iterations and 3 repetitions of 20 queries per strategy.
+
+| Retrieval strategy | Mean latency | p95 latency | SLA |
+|---|---:|---:|---|
+| Sparse BM25 | 0.6 ms | 0.3 ms | Pass |
+| Dense vector | 3.1 ms | 11.0 ms | Pass |
+| Hybrid RRF | **0.2 ms** | **0.4 ms** | Pass |
+| Hybrid + cross-encoder (CPU) | 49.9 ms | 54.7 ms | Pass |
+
+The separate controlled ablation report records Hybrid RRF at MRR **1.000** and NDCG@K **1.000** on that experiment's dataset. These are dataset- and harness-specific retrieval measurements, not universal answer-quality or production-latency guarantees. See the [experiment summary](reports/experiment_summary.md), [SLA report](reports/performance_sla_report.md), and [architecture](docs/ARCHITECTURE.md).
+
+**Why it matters:** makes retrieval choices measurable—chunking, sparse/dense fusion, and reranking can be compared as controlled experiments instead of chosen by intuition.
+
+---
+
 ## 1. Problem Statement & Motivation
 
 Standard "PDF chatbot" tutorials typically perform naive fixed-window character splitting, embed chunks through a single dense vector model, and fetch nearest neighbors using plain vector similarity. In real-world enterprise environments and competition evaluations, this naive approach suffers from fundamental engineering bottlenecks:
