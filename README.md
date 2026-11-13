@@ -18,6 +18,17 @@ The chart is refreshed from the [14 November 2026 GitHub Actions run](https://gi
 - CPU latency SLA: sparse BM25 p95 **0.1 ms**, dense p95 **6.8 ms**, hybrid RRF p95 **0.1 ms**, hybrid plus cross-encoder p95 **54.2 ms**. All four SLA targets passed.
 - Scalability: 500 documents / 1,503 chunks; at 20 workers, warm-cache throughput was **519.4 queries/s** with p95 **17.41 ms**.
 
+### Retrieval latency evidence
+
+The SLA report uses 2 warm-up iterations and 3 repetitions of 20 queries per strategy.
+
+| Retrieval strategy | Mean latency | p95 latency | SLA |
+|---|---:|---:|---|
+| Sparse BM25 | 0.6 ms | 0.3 ms | Pass |
+| Dense vector | 3.1 ms | 11.0 ms | Pass |
+| Hybrid RRF | **0.2 ms** | **0.4 ms** | Pass |
+| Hybrid + cross-encoder (CPU) | 49.9 ms | 54.7 ms | Pass |
+
 **Scope:** retrieval ablations used a 30-document / 20-query development corpus and deterministic mock extractive generation, so the ranking metrics isolate retrieval and do not measure answer quality from an LLM. Concurrency figures measure in-process retrieval, not end-to-end API requests or production traffic. The separate FLAN-T5 neural-generation report is dated 5 November 2026 and was not rerun by this mock-generation CI job. Treat all values as controlled development measurements, not universal or production guarantees.
 
 **Reproduce the experiments**
