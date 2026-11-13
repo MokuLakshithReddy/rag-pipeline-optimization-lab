@@ -1,5 +1,8 @@
 # RAG Pipeline Optimization Lab
 
+[![Stars](https://img.shields.io/github/stars/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/stargazers) [![Forks](https://img.shields.io/github/forks/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/forks) [![Open Issues](https://img.shields.io/github/issues/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/issues) [![Last Commit](https://img.shields.io/github/last-commit/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/commits/main)
+
+
 A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarking, and multi-tenant deployment platform developed for the Kaggle Competition: **Gen AI Project 4 – Building & Optimizing RAG Pipelines**.
 
 - **Official Competition Link**: [https://www.kaggle.com/competitions/gen-ai-project-4-building-optimizing-rag-pipelines](https://www.kaggle.com/competitions/gen-ai-project-4-building-optimizing-rag-pipelines)
