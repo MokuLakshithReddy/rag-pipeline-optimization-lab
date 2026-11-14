@@ -11,7 +11,14 @@ A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarki
 
 ![RAG benchmark overview](docs/benchmark-overview.svg)
 
-The chart summarizes the repository's committed benchmark outputs. The retrieval ablation uses a small controlled corpus and deterministic mock extractive generation to isolate retrieval effects; the separate neural-generation experiment uses local FLAN-T5-small with a heuristic grounding evaluator. These are development measurements, not a claim of universal or production RAG quality.
+The chart is refreshed from the [14 November 2026 GitHub Actions run](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/runs/43547047295). All three Python matrix jobs (3.10, 3.11, 3.12) passed, and the workflow uploaded the generated benchmark reports.
+
+**Fresh CI snapshot (Python 3.12 runner):**
+- Controlled retrieval ablation: **Hybrid RRF MRR 1.000 / NDCG@5 1.000**, p95 **1.18 ms**; the dense fixed-chunk baseline p95 was 12.52 ms.
+- CPU latency SLA: sparse BM25 p95 **0.1 ms**, dense p95 **6.8 ms**, hybrid RRF p95 **0.1 ms**, hybrid plus cross-encoder p95 **54.2 ms**. All four SLA targets passed.
+- Scalability: 500 documents / 1,503 chunks; at 20 workers, warm-cache throughput was **519.4 queries/s** with p95 **17.41 ms**.
+
+**Scope:** retrieval ablations used a 30-document / 20-query development corpus and deterministic mock extractive generation, so the ranking metrics isolate retrieval and do not measure answer quality from an LLM. Concurrency figures measure in-process retrieval, not end-to-end API requests or production traffic. The separate FLAN-T5 neural-generation report is dated 5 November 2026 and was not rerun by this mock-generation CI job. Treat all values as controlled development measurements, not universal or production guarantees.
 
 **Reproduce the experiments**
 
@@ -21,7 +28,7 @@ python src/experiments/benchmark_performance.py
 python src/experiments/benchmark_scalability.py --corpus-tiers 30 100 500 --concurrency-levels 1 5 10 20
 ```
 
-Detailed evidence: [retrieval CSV](reports/benchmark_results.csv) · [experiment summary](reports/experiment_summary.md) · [latency/SLA report](reports/performance_sla_report.md) · [scalability report](reports/scalability_benchmark_report.md) · [experiment methodology](docs/EXPERIMENTS.md).
+Detailed evidence: [latest CI reports and artifacts](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/runs/43547047295) · [committed baseline CSV](reports/benchmark_results.csv) · [committed experiment summary](reports/experiment_summary.md) · [latency/SLA methodology](reports/performance_sla_report.md) · [scalability methodology](reports/scalability_benchmark_report.md) · [experiment methodology](docs/EXPERIMENTS.md).
 
 [![CI Pipeline & Retrieval Benchmarks](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/workflows/ci.yml)
 
