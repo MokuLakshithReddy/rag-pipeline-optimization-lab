@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1080" viewBox="0 0 1400 1080" role="img" aria-labelledby="title desc">
+<title id="title">RAG pipeline benchmark overview</title>
+<desc id="desc">Repository-reported retrieval ablations, latency, generation grounding, and concurrency benchmark results from November 4 to 5, 2026.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="1" stop-color="#111827"/></linearGradient>
+  <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+  <linearGradient id="violet" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#818cf8"/><stop offset="1" stop-color="#c084fc"/></linearGradient>
+  <style>
+    .h{font:700 34px Inter,Segoe UI,Arial,sans-serif;fill:#f8fafc}
+    .sub{font:400 16px Inter,Segoe UI,Arial,sans-serif;fill:#94a3b8}
+    .panel{fill:#111c2d;stroke:#253449;stroke-width:1.5}
+    .pt{font:700 20px Inter,Segoe UI,Arial,sans-serif;fill:#e2e8f0}
+    .lab{font:500 14px Inter,Segoe UI,Arial,sans-serif;fill:#cbd5e1}
+    .muted{font:400 12px Inter,Segoe UI,Arial,sans-serif;fill:#94a3b8}
+    .value{font:700 14px Inter,Segoe UI,Arial,sans-serif;fill:#f8fafc}
+    .small{font:500 11px Inter,Segoe UI,Arial,sans-serif;fill:#94a3b8}
+  </style>
+</defs>
+<rect width="1400" height="1080" rx="26" fill="url(#bg)"/>
+<text x="64" y="76" class="h">RAG Pipeline Optimization Lab</text>
+<text x="64" y="108" class="sub">Benchmark snapshot · repository reports generated 4–5 Nov 2026 · CPU / local test environment</text>
+<rect x="1050" y="48" width="286" height="42" rx="21" fill="#172d40" stroke="#28506a"/>
+<text x="1193" y="74" text-anchor="middle" class="lab" fill="#67e8f9">CONTROLLED EXPERIMENTS</text>
+
+<!-- panel 1 -->
+<rect x="56" y="148" width="1288" height="420" rx="20" class="panel"/>
+<text x="88" y="190" class="pt">Retrieval quality and p95 latency</text>
+<text x="88" y="216" class="muted">30-document / 20-query development benchmark · grounded-extractive mock generator · top-k = 5</text>
+<text x="88" y="263" class="lab">Experiment</text>
+<text x="642" y="263" class="lab">MRR ↑</text>
+<text x="1010" y="263" class="lab">p95 latency ↓</text>
+<text x="1320" y="263" text-anchor="end" class="lab">milliseconds</text>
+<g>
+  <text x="88" y="304" class="lab">Dense · fixed 256</text>
+  <rect x="340" y="286" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="286" width="229.6" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="301" class="value">0.919</text>
+  <rect x="790" y="286" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="286" width="14" height="18" rx="9" fill="url(#violet)"/><text x="1170" y="301" class="value">39.2 ms</text>
+  <text x="88" y="354" class="lab">Dense · recursive 256</text>
+  <rect x="340" y="336" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="336" width="226.8" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="351" class="value">0.907</text>
+  <rect x="790" y="336" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="336" width="1.5" height="18" rx="2" fill="url(#violet)"/><text x="1170" y="351" class="value">1.4 ms</text>
+  <text x="88" y="404" class="lab">Dense · recursive 512</text>
+  <rect x="340" y="386" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="386" width="231.5" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="401" class="value">0.926</text>
+  <rect x="790" y="386" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="386" width="1.5" height="18" rx="2" fill="url(#violet)"/><text x="1170" y="401" class="value">1.2 ms</text>
+  <text x="88" y="454" class="lab">Sparse · BM25</text>
+  <rect x="340" y="436" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="436" width="238.9" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="451" class="value">0.956</text>
+  <rect x="790" y="436" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="436" width="1.5" height="18" rx="2" fill="url(#violet)"/><text x="1170" y="451" class="value">1.6 ms</text>
+  <text x="88" y="504" class="lab">Hybrid · RRF</text>
+  <rect x="340" y="486" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="486" width="250" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="501" class="value">1.000</text>
+  <rect x="790" y="486" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="486" width="4" height="18" rx="3" fill="url(#violet)"/><text x="1170" y="501" class="value">4.0 ms</text>
+  <text x="88" y="554" class="lab">Hybrid + cross-encoder</text>
+  <rect x="340" y="536" width="250" height="18" rx="9" fill="#263549"/><rect x="340" y="536" width="243" height="18" rx="9" fill="url(#cyan)"/><text x="642" y="551" class="value">0.972</text>
+  <rect x="790" y="536" width="360" height="18" rx="9" fill="#263549"/><rect x="790" y="536" width="307" height="18" rx="9" fill="url(#violet)"/><text x="1170" y="551" class="value">307.1 ms</text>
+</g>
+
+<!-- panel 2 -->
+<rect x="56" y="594" width="628" height="310" rx="20" class="panel"/>
+<text x="88" y="636" class="pt">Local generation quality</text>
+<text x="88" y="662" class="muted">FLAN-T5-small · heuristic proposition grounding · 4 configurations</text>
+<text x="88" y="706" class="lab">Dense</text><rect x="210" y="692" width="300" height="15" rx="7" fill="#263549"/><rect x="210" y="692" width="300" height="15" rx="7" fill="url(#cyan)"/><text x="532" y="705" class="value">0.214 F1</text>
+<text x="88" y="752" class="lab">Sparse</text><rect x="210" y="738" width="300" height="15" rx="7" fill="#263549"/><rect x="210" y="738" width="172" height="15" rx="7" fill="url(#cyan)"/><text x="532" y="751" class="value">0.123 F1</text>
+<text x="88" y="798" class="lab">Hybrid RRF</text><rect x="210" y="784" width="300" height="15" rx="7" fill="#263549"/><rect x="210" y="784" width="241" height="15" rx="7" fill="url(#cyan)"/><text x="532" y="797" class="value">0.172 F1</text>
+<text x="88" y="844" class="lab">Hybrid + rerank</text><rect x="210" y="830" width="300" height="15" rx="7" fill="#263549"/><rect x="210" y="830" width="245" height="15" rx="7" fill="url(#cyan)"/><text x="532" y="843" class="value">0.175 F1</text>
+<text x="88" y="880" class="small">Faithfulness: 0.950–1.000 in this heuristic evaluator run.</text>
+
+<!-- panel 3 -->
+<rect x="716" y="594" width="628" height="310" rx="20" class="panel"/>
+<text x="748" y="636" class="pt">Concurrency · 500-document tier</text>
+<text x="748" y="662" class="muted">1,503 chunks · warm cache · 100 requests</text>
+<text x="748" y="706" class="lab">1 worker</text><rect x="870" y="692" width="280" height="15" rx="7" fill="#263549"/><rect x="870" y="692" width="280" height="15" rx="7" fill="url(#violet)"/><text x="1170" y="705" class="value">205.8 QPS</text>
+<text x="748" y="752" class="lab">5 workers</text><rect x="870" y="738" width="280" height="15" rx="7" fill="#263549"/><rect x="870" y="738" width="222" height="15" rx="7" fill="url(#violet)"/><text x="1170" y="751" class="value">163.5 QPS</text>
+<text x="748" y="798" class="lab">10 workers</text><rect x="870" y="784" width="280" height="15" rx="7" fill="#263549"/><rect x="870" y="784" width="173" height="15" rx="7" fill="url(#violet)"/><text x="1170" y="797" class="value">127.3 QPS</text>
+<text x="748" y="844" class="lab">20 workers</text><rect x="870" y="830" width="280" height="15" rx="7" fill="#263549"/><rect x="870" y="830" width="181" height="15" rx="7" fill="url(#violet)"/><text x="1170" y="843" class="value">133.0 QPS</text>
+<text x="748" y="880" class="small">Warm p95 latency rises from 15.25 ms (1 worker) to 203.49 ms (20 workers).</text>
+
+<text x="64" y="958" class="lab">How to read this responsibly</text>
+<text x="64" y="984" class="sub">These are repository-reported controlled experiments, not production traffic or a third-party reproduction.</text>
+<text x="64" y="1010" class="sub">Retrieval ablations use mock extractive generation; local generation uses FLAN-T5-small; the 20-query corpus is small.</text>
+<text x="64" y="1040" class="muted">Source: reports/benchmark_results.csv · experiment_summary.md · performance_sla_report.md · scalability_benchmark_report.md</text>
+</svg>
