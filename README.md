@@ -7,6 +7,26 @@ A production-grade Retrieval-Augmented Generation (RAG) optimization, benchmarki
 
 ---
 
+## Benchmark evidence
+
+![RAG benchmark overview](docs/benchmark-overview.svg)
+
+The chart summarizes the repository's committed benchmark outputs. The retrieval ablation uses a small controlled corpus and deterministic mock extractive generation to isolate retrieval effects; the separate neural-generation experiment uses local FLAN-T5-small with a heuristic grounding evaluator. These are development measurements, not a claim of universal or production RAG quality.
+
+**Reproduce the experiments**
+
+```bash
+uv run python src/experiments/runner.py
+python src/experiments/benchmark_performance.py
+python src/experiments/benchmark_scalability.py --corpus-tiers 30 100 500 --concurrency-levels 1 5 10 20
+```
+
+Detailed evidence: [retrieval CSV](reports/benchmark_results.csv) · [experiment summary](reports/experiment_summary.md) · [latency/SLA report](reports/performance_sla_report.md) · [scalability report](reports/scalability_benchmark_report.md) · [experiment methodology](docs/EXPERIMENTS.md).
+
+[![CI Pipeline & Retrieval Benchmarks](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/MokuLakshithReddy/rag-pipeline-optimization-lab/actions/workflows/ci.yml)
+
+---
+
 ## At a glance
 
 ![GitHub stars](https://img.shields.io/github/stars/MokuLakshithReddy/rag-pipeline-optimization-lab?style=flat-square&label=stars)
